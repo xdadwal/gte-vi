@@ -225,27 +225,32 @@ time {
   background: oklch(93% 0.06 80);
 }
 .brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  color: var(--ink);
+  min-height: 56px;
+  flex-shrink: 0;
+  padding: 3px 4px;
   text-decoration: none;
   width: max-content;
 }
-.brand span {
+.brand-wordmark {
+  display: grid;
+  gap: 3px;
   font-family: BarlowCondensed, "Arial Narrow", sans-serif;
   font-weight: 700;
-  font-size: 1.2rem;
-  line-height: 0.92;
-  letter-spacing: -0.02em;
+  font-size: 1.25rem;
+  line-height: 0.84;
+  letter-spacing: 0.035em;
+  color: oklch(98% 0.008 85);
+  -webkit-text-stroke: 1.4px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 1px 1.5px 0 var(--ink);
 }
-.brand b {
-  font-family: BarlowCondensed, "Arial Narrow", sans-serif;
-  font-size: 3rem;
-  line-height: 1;
-  letter-spacing: -0.09em;
-  color: var(--teal);
-  padding-right: 0.15rem;
+.brand-wordmark > span {
+  display: block;
+}
+.brand-wordmark .brand-election {
+  color: oklch(77% 0.13 32);
 }
 .live-state {
   display: flex;

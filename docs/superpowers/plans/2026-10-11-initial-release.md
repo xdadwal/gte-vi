@@ -1,4 +1,4 @@
-# Grand Theft Election VI implementation plan
+# Grant Theft Elections implementation plan
 
 Goal: working anonymous Delhi map and private operator console.
 Architecture: Go modular API, PostGIS authoritative state, Redis events, browser routing worker, React/MapLibre UI.

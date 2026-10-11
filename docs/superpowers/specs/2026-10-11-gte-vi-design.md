@@ -1,4 +1,4 @@
-# Grand Theft Election VI design specification
+# Grant Theft Elections design specification
 
 The approved conversation and the implementation plan are the product authority. PRODUCT.md and DESIGN.md capture the agreed design brief.
 

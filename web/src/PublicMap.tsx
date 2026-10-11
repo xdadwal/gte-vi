@@ -1,3 +1,4 @@
+import { Brand } from "./Brand";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   StarIcon,
@@ -472,14 +473,7 @@ export function PublicMap() {
         }}
       />
       <header className="map-header">
-        <a className="brand" href="/" aria-label="Grand Theft Election VI home">
-          <span>
-            GRAND THEFT
-            <br />
-            ELECTION
-          </span>
-          <b>VI</b>
-        </a>
+        <Brand />
         <span className={`live-state ${fresh ? "healthy" : ""}`}>
           <i />
           {displayState}

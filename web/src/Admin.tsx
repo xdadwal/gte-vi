@@ -1,3 +1,4 @@
+import { Brand } from "./Brand";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   MapTrifoldIcon,
@@ -179,14 +180,7 @@ export function Admin() {
   if (!me)
     return (
       <main className="admin-signin">
-        <a className="brand" href="/">
-          <span>
-            GRAND THEFT
-            <br />
-            ELECTION
-          </span>
-          <b>VI</b>
-        </a>
+        <Brand />
         <div>
           <p className="eyebrow">OPERATOR CONSOLE</p>
           <h1>
@@ -256,14 +250,7 @@ export function Admin() {
         Skip to content
       </a>
       <aside className="admin-nav">
-        <a className="brand" href="/">
-          <span>
-            GRAND THEFT
-            <br />
-            ELECTION
-          </span>
-          <b>VI</b>
-        </a>
+        <Brand />
         <span className="eyebrow">OPERATOR CONSOLE</span>
         <nav>
           {(

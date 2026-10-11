@@ -1,4 +1,4 @@
-# Grand Theft Election VI
+# Grant Theft Elections
 
 An original, daylight-readable Delhi community map. Anonymous visitors report their current 250 m area with 1–5 stars, see fresh reports, receive foreground proximity alerts, and preview walking routes to host-confirmed refuges. The private `/admin` console moderates contributions, manages refuges, records changes, and controls operator access.
 
