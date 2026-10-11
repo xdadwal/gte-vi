@@ -50,8 +50,6 @@ The secure map is `https://192.168.1.2:8443`. Download `/dev-ca.cer` from the HT
 
 The CA lasts one year and server certificates last 30 days. Re-running the script preserves the CA and issues a certificate for the current LAN IP. Keys remain in ignored `artifacts/tls`; the Vite download route serves only the public CA certificate, only in development. Remove the test CA from your phone when finished. Simply bypassing a certificate warning does not establish a trusted HTTPS setup.
 
-The public map includes a manually reviewed news snapshot for 11 October 2026. **News** markers identify approximate places, with publication times, source links and OpenStreetMap references. They are unrated and do not create anonymous reports, trigger proximity alerts or alter walking routes. They disappear from the map at the snapshot's validity deadline; the source panel retains clearly archived entries. Edit `web/src/news.ts` to refresh or remove this temporary context. No news scraping or automatic refresh is enabled.
-
 ## Prepare the walking graph
 
 Download an OpenStreetMap PBF from [Geofabrik Northern Zone](https://download.geofabrik.de/asia/india/northern-zone.html), then:

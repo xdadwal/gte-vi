@@ -15,13 +15,6 @@ import { useLive, useLocation } from "./live";
 import { api } from "./api";
 import { randomId } from "./id";
 import {
-  NEWS_ITEMS,
-  NEWS_CHECKED_AT,
-  newsForMap,
-  newsDate,
-  type NewsItem,
-} from "./news";
-import {
   alertFor,
   cellsInBounds,
   cellsAround,
@@ -81,10 +74,9 @@ export function PublicMap() {
     [sound, setSound] = useState(() => preference("gte-sound", false)),
     [locate, setLocate] = useState(0),
     [panel, setPanel] = useState<
-      "home" | "report" | "refuges" | "incident" | "settings" | "news"
+      "home" | "report" | "refuges" | "incident" | "settings"
     >("home"),
     [selected, setSelected] = useState<Incident[]>([]),
-    [selectedNews, setSelectedNews] = useState<NewsItem | null>(null),
     [stars, setStars] = useState(0),
     [sending, setSending] = useState(false),
     [message, setMessage] = useState(""),
@@ -94,7 +86,6 @@ export function PublicMap() {
     [affected, setAffected] = useState(false),
     [calculating, setCalculating] = useState(false),
     [now, setNow] = useState(Date.now());
-  const news = useMemo(() => newsForMap(now), [Math.floor(now / 60000)]);
   const points = location.fix ? xy(location.fix.lon, location.fix.lat) : null;
   const viewCells = useMemo(() => cellsInBounds(...bounds), [bounds]);
   const cells = useMemo(() => {
@@ -370,12 +361,6 @@ export function PublicMap() {
     <main className="public-app" id="main-content">
       <MapView
         incidents={incidents}
-        news={news}
-        selectedNews={panel === "news" ? selectedNews : null}
-        onNews={(item) => {
-          setSelectedNews(item);
-          setPanel("news");
-        }}
         overview={!viewCells.length ? snapshot.overview : []}
         exitCoordinates={route ? initialExit(route) : undefined}
         refuges={eligible}
@@ -457,7 +442,6 @@ export function PublicMap() {
                   refuges: "Find refuge",
                   incident: "Reported area",
                   settings: "Map settings",
-                  news: "News context",
                 }[panel]
               }
             </h1>
@@ -482,20 +466,6 @@ export function PublicMap() {
                 Refuges
               </span>
             </div>
-            <button
-              className="news-access"
-              onClick={() => {
-                setSelectedNews(null);
-                setPanel("news");
-              }}
-            >
-              <strong>
-                {news.length
-                  ? `${news.length} news locations today`
-                  : "Previous news coverage"}
-              </strong>
-              <span>Sources and timestamps →</span>
-            </button>
             <label className="radius-label">
               Alert distance
               <select
@@ -518,62 +488,6 @@ export function PublicMap() {
                 : "Waiting for current map updates."}
             </p>
           </>
-        )}
-        {panel === "news" && (
-          <div className="news-context">
-            <p className="small-copy">
-              News markers show approximate places mentioned in coverage.
-              Unrated; no proximity alerts or route restrictions.
-            </p>
-            <p className="small-copy">
-              Reviewed {newsDate(NEWS_CHECKED_AT)}. Updates are manual.
-            </p>
-            {selectedNews ? (
-              <article>
-                <span className="eyebrow">
-                  NEWS /{" "}
-                  {Date.parse(selectedNews.validUntil) <= now
-                    ? "ARCHIVED"
-                    : "DATED COVERAGE"}
-                </span>
-                <h2>{selectedNews.place}</h2>
-                <h3>{selectedNews.headline}</h3>
-                <p>{selectedNews.summary}</p>
-                <p className="small-copy">
-                  Published {newsDate(selectedNews.publishedAt)}
-                </p>
-                <a
-                  href={selectedNews.sourceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Read {selectedNews.sourceName} coverage ↗
-                </a>
-                <a
-                  href={selectedNews.placeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Place reference on OpenStreetMap ↗
-                </a>
-                <button onClick={() => setSelectedNews(null)}>
-                  All news locations
-                </button>
-              </article>
-            ) : (
-              <div className="news-list">
-                {NEWS_ITEMS.map((item) => (
-                  <button key={item.id} onClick={() => setSelectedNews(item)}>
-                    <span>
-                      <strong>{item.place}</strong>
-                      <small>{item.headline}</small>
-                    </span>
-                    <span aria-hidden="true">↗</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
         )}
         {panel === "report" && (
           <>

@@ -7,13 +7,9 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import type { Incident, Refuge, Fix, Overview } from "./model";
 import { ll } from "./model";
-import type { NewsItem } from "./news";
 import { hotspotFeatures, severityColor, STAR_COLORS } from "./hotspots";
 type Props = {
   incidents: Incident[];
-  news?: NewsItem[];
-  selectedNews?: NewsItem | null;
-  onNews?: (item: NewsItem) => void;
   overview?: Overview[];
   exitCoordinates?: [number, number][];
   refuges: Refuge[];
@@ -137,41 +133,6 @@ export function MapView(props: Props) {
         new maplibregl.Marker({ element: button })
           .setLngLat(ll(x * 500 + 250, y * 500 + 250))
           .addTo(m),
-      );
-    }
-    const newsGroups: NewsItem[][] = [];
-    for (const item of p.news || []) {
-      const point = m.project([item.lon, item.lat]);
-      const group =
-        m.getZoom() < 13
-          ? newsGroups.find((group) => {
-              const other = m.project([group[0].lon, group[0].lat]);
-              return Math.hypot(point.x - other.x, point.y - other.y) < 60;
-            })
-          : undefined;
-      if (group) group.push(item);
-      else newsGroups.push([item]);
-    }
-    for (const group of newsGroups) {
-      const button = document.createElement("button");
-      button.className = "news-marker";
-      button.textContent = group.length > 1 ? `News · ${group.length}` : "News";
-      button.setAttribute(
-        "aria-label",
-        group.length > 1
-          ? `${group.length} news locations. Zoom to inspect`
-          : `News: ${group[0].place}`,
-      );
-      const center: [number, number] = [
-        group.reduce((sum, item) => sum + item.lon, 0) / group.length,
-        group.reduce((sum, item) => sum + item.lat, 0) / group.length,
-      ];
-      button.onclick = () =>
-        group.length > 1
-          ? m.easeTo({ center, zoom: 14 })
-          : latest.current.onNews?.(group[0]);
-      markers.current.push(
-        new maplibregl.Marker({ element: button }).setLngLat(center).addTo(m),
       );
     }
     for (const r of p.refuges) {
@@ -317,7 +278,6 @@ export function MapView(props: Props) {
       ]);
     };
     m.on("moveend", bounds);
-    m.on("zoomend", update);
     m.on("dragstart", () => {
       following.current = false;
     });
@@ -340,7 +300,6 @@ export function MapView(props: Props) {
   }, []);
   useEffect(update, [
     props.incidents,
-    props.news,
     props.overview,
     props.exitCoordinates,
     props.refuges,
@@ -375,23 +334,6 @@ export function MapView(props: Props) {
       });
     }
   }, [props.selected?.id]);
-  useEffect(() => {
-    if (!props.selectedNews) return;
-    const item = props.selectedNews;
-    const focus = () => {
-      map.current?.resize();
-      map.current?.easeTo({
-        center: [item.lon, item.lat],
-        zoom: 14,
-        duration: 250,
-        offset:
-          window.innerWidth < 768 ? [0, -window.innerHeight * 0.26] : [170, 0],
-      });
-    };
-    focus();
-    window.addEventListener("resize", focus);
-    return () => window.removeEventListener("resize", focus);
-  }, [props.selectedNews?.id]);
   return (
     <div
       className="map-view"
