@@ -657,9 +657,6 @@ export function PublicMap() {
               Alerts operate while this map is open and active. Your location is
               not shown to other people.
             </p>
-            <a className="text-button" href="/admin">
-              Operator sign-in
-            </a>
           </>
         )}
         {message && (
