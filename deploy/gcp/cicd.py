@@ -16,6 +16,9 @@ PERMISSIONS = [
     'compute.instanceTemplates.useReadOnly',
     'compute.instanceGroupManagers.get', 'compute.instanceGroupManagers.update',
     'compute.instances.get', 'compute.instances.list', 'compute.instances.setMetadata',
+    # Managed-group PATCH validates the VM operations its updater performs.
+    'compute.instances.create', 'compute.instances.delete', 'compute.instances.setTags',
+    'compute.instances.setLabels', 'compute.instances.setServiceAccount', 'compute.disks.create',
     'compute.projects.get', 'compute.zones.get', 'compute.zones.list',
     'compute.regionOperations.get', 'compute.globalOperations.get', 'compute.zoneOperations.get',
     'compute.subnetworks.use', 'compute.subnetworks.get',
