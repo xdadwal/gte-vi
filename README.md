@@ -27,6 +27,17 @@ Open <http://127.0.0.1:5173> or <http://127.0.0.1:5173/admin>. The console expos
 
 Development also accepts `http://localhost:5173` and the built app at `http://127.0.0.1:8080` or `http://localhost:8080`. If you change preview ports, set `PUBLIC_ORIGIN` to the browser's exact origin or configure the comma-separated `DEV_ALLOWED_ORIGINS`. Production accepts only `PUBLIC_ORIGIN` and ignores development origins.
 
+For devices on the same Wi-Fi, use the laptop's LAN IPv4 address (for example `192.168.1.2`) and restart both development servers:
+
+```sh
+# Backend terminal, after loading .env:
+LISTEN_ADDR=0.0.0.0:8080 DEV_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:8080,http://localhost:8080,http://192.168.1.2:5173,http://192.168.1.2:8080" go run ./cmd/gte
+# Frontend terminal:
+npm run dev --prefix web -- --host 0.0.0.0
+```
+
+Open `http://192.168.1.2:5173` from the other device. Replace the example IP with your current address. Local-network HTTP supports browsing and the development console, but browser geolocation requires a trusted HTTPS origin on phones.
+
 ## Prepare the walking graph
 
 Download an OpenStreetMap PBF from [Geofabrik Northern Zone](https://download.geofabrik.de/asia/india/northern-zone.html), then:

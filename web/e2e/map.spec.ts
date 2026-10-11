@@ -30,6 +30,13 @@ test("anonymous mobile report holds, cancels and confirms server acknowledgement
 test("operator edits a draft, publishes and closes a refuge", async ({
   page,
 }) => {
+  // Local-network HTTP has getRandomValues but no randomUUID.
+  await page.addInitScript(() =>
+    Object.defineProperty(crypto, "randomUUID", {
+      value: undefined,
+      configurable: true,
+    }),
+  );
   const refugeName =
     "Automated test refuge " + Date.now() + " — not operational";
   await page.goto("/admin");
@@ -147,9 +154,11 @@ test("real worker previews a walking route and marks it affected on host closure
     headers: { "X-CSRF-Token": me.csrf },
   });
   expect(closed.ok()).toBeTruthy();
-  await expect(page.locator(".route-summary .warning")).toContainText(
-    "affect this route",
-  );
+  await expect(
+    page
+      .locator(".route-summary .warning")
+      .filter({ hasText: "affect this route" }),
+  ).toContainText("affect this route");
   await expect(page.locator(".refuge-list button")).toHaveCount(0);
   await context.close();
 });

@@ -7,6 +7,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import type { Incident, Refuge, Fix, Overview } from "./model";
 import { ll } from "./model";
+import { hotspotFeatures, severityColor, STAR_COLORS } from "./hotspots";
 type Props = {
   incidents: Incident[];
   overview?: Overview[];
@@ -40,11 +41,14 @@ export function MapView(props: Props) {
       features: p.incidents.map((i) => ({
         type: "Feature",
         geometry: i.hotzone,
-        properties: { id: i.id, status: i.status },
+        properties: { id: i.id, status: i.status, average: i.average },
       })),
     };
     (m.getSource("incidents") as GeoJSONSource).setData(
       collection as GeoJSON.FeatureCollection,
+    );
+    (m.getSource("hotspots") as GeoJSONSource).setData(
+      hotspotFeatures(p.incidents),
     );
     (m.getSource("route") as GeoJSONSource).setData({
       type: "FeatureCollection",
@@ -110,6 +114,12 @@ export function MapView(props: Props) {
         button = document.createElement("button");
       button.className =
         "map-label " + (i.status === "pending" ? "pending" : "");
+      button.style.setProperty(
+        "--severity-color",
+        i.status === "pending"
+          ? "#8b8170"
+          : STAR_COLORS[Math.max(0, Math.min(4, Math.round(i.average) - 1))],
+      );
       button.textContent =
         i.status === "active" ? `${i.average.toFixed(1)} ★` : "Pending";
       button.setAttribute(
@@ -170,23 +180,45 @@ export function MapView(props: Props) {
     );
     m.on("load", () => {
       ready.current = true;
-      for (const id of ["incidents", "route", "exit", "position"])
+      for (const id of ["incidents", "hotspots", "route", "exit", "position"])
         m.addSource(id, {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
         });
       m.addLayer({
+        id: "incident-hotspots",
+        type: "fill",
+        source: "hotspots",
+        paint: {
+          "fill-color": severityColor,
+          "fill-opacity": [
+            "case",
+            ["==", ["get", "status"], "pending"],
+            0.023,
+            0.045,
+          ],
+          "fill-antialias": false,
+        },
+      });
+      m.addLayer({
         id: "incident-fill",
         type: "fill",
         source: "incidents",
-        paint: { "fill-color": "#e5aa3a", "fill-opacity": 0.18 },
+        paint: {
+          "fill-color": severityColor,
+          "fill-opacity": 0.025,
+        },
       });
       m.addLayer({
         id: "active-outline",
         type: "line",
         source: "incidents",
         filter: ["==", ["get", "status"], "active"],
-        paint: { "line-color": "#946017", "line-width": 2 },
+        paint: {
+          "line-color": severityColor,
+          "line-width": 1,
+          "line-opacity": 0.65,
+        },
       });
       m.addLayer({
         id: "pending-outline",
@@ -194,8 +226,9 @@ export function MapView(props: Props) {
         source: "incidents",
         filter: ["==", ["get", "status"], "pending"],
         paint: {
-          "line-color": "#946017",
-          "line-width": 2,
+          "line-color": severityColor,
+          "line-width": 1,
+          "line-opacity": 0.65,
           "line-dasharray": [3, 2],
         },
       });

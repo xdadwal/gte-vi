@@ -10,6 +10,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { api } from "./api";
+import { randomId } from "./id";
 import { MapView } from "./MapView";
 import { refugeEligible, isOpen, type Incident, type Refuge } from "./model";
 type Identity = { email: string; role: "owner" | "admin"; csrf: string };
@@ -39,7 +40,7 @@ type Audit = {
 };
 type View = "incidents" | "refuges" | "activity" | "team";
 const emptyRefuge = (): AdminRefuge => ({
-  id: crypto.randomUUID(),
+  id: randomId(),
   name: "",
   lon: 77.209,
   lat: 28.6139,

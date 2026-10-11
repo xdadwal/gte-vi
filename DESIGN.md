@@ -1,7 +1,7 @@
 # Design
 
 ## Approved direction
-Light street atlas for people outdoors in Delhi during daylight. Original bold condensed branding, readable system-font UI. Restrained off-white neutrals; amber incident geometry, teal refuges, blue route lines. Dark ink text. Opaque panels and visible focus rings.
+Light street atlas for people outdoors in Delhi during daylight. Original bold condensed branding, readable system-font UI. Restrained off-white neutrals; soft amber-to-crimson gradient hotspots for 1–5 star incident ratings, teal refuges, blue route lines. Hotspots fade within the existing zone footprint; numeric star labels and dashed pending outlines preserve meaning without relying on color. Dark ink text. Opaque panels and visible focus rings.
 
 ## Public layout
 Full-height map. Compact header with original GTE VI wordmark and live state. Desktop left panel; mobile bottom sheet. Report and Find refuge remain reachable. No hero or marketing page.

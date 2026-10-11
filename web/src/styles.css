@@ -465,7 +465,7 @@ time {
 .map-label {
   padding: 0.45rem 0.6rem;
   background: var(--paper);
-  border: 1px solid #946017;
+  border: 1px solid var(--severity-color, #946017);
   border-radius: 5px;
   font-weight: 700;
   box-shadow: 0 2px 8px rgb(39 40 33/0.1);
@@ -1194,4 +1194,22 @@ time {
     bottom: 16px !important;
     left: 374px !important;
   }
+}
+
+/* Severity is always paired with a numeric star label. */
+.map-label:not(.overview-label) {
+  box-shadow:
+    inset 0 -3px var(--severity-color, #946017),
+    0 2px 8px rgb(39 40 33 / 0.1);
+}
+.legend .severity-ramp {
+  width: 58px;
+  background: linear-gradient(
+    90deg,
+    oklch(65% 0.13 90),
+    oklch(72% 0.15 75),
+    oklch(66% 0.17 48),
+    oklch(59% 0.18 29),
+    oklch(50% 0.17 8)
+  );
 }

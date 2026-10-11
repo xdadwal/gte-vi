@@ -13,6 +13,7 @@ import { MapView } from "./MapView";
 import { HoldButton } from "./HoldButton";
 import { useLive, useLocation } from "./live";
 import { api } from "./api";
+import { randomId } from "./id";
 import {
   alertFor,
   cellsInBounds,
@@ -258,7 +259,7 @@ export function PublicMap() {
         setError("Waiting for a recent location accurate within 100 metres.");
         return;
       }
-      request.current = { key: crypto.randomUUID(), body: { ...fix, stars } };
+      request.current = { key: randomId(), body: { ...fix, stars } };
     }
     const currentFix = location.fix;
     if (
@@ -457,8 +458,8 @@ export function PublicMap() {
             <p className="intro">Fresh reports from people nearby.</p>
             <div className="legend">
               <span>
-                <i className="amber" />
-                Reported areas
+                <i className="severity-ramp" />
+                1–5 ★ reported areas
               </span>
               <span>
                 <i className="teal" />
