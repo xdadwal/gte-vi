@@ -25,6 +25,8 @@ npm run dev --prefix web
 
 Open <http://127.0.0.1:5173> or <http://127.0.0.1:5173/admin>. The console exposes local-token sign-in only in development. The default database contains **no refuges**. Browser geolocation requires localhost or HTTPS; reporting requires a fix within 30 seconds and 100 m accuracy.
 
+Development also accepts `http://localhost:5173` and the built app at `http://127.0.0.1:8080` or `http://localhost:8080`. If you change preview ports, set `PUBLIC_ORIGIN` to the browser's exact origin or configure the comma-separated `DEV_ALLOWED_ORIGINS`. Production accepts only `PUBLIC_ORIGIN` and ignores development origins.
+
 ## Prepare the walking graph
 
 Download an OpenStreetMap PBF from [Geofabrik Northern Zone](https://download.geofabrik.de/asia/india/northern-zone.html), then:

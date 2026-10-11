@@ -42,6 +42,12 @@ func main() {
 	defer r.Close()
 	secure := env("APP_ENV", "production") != "development"
 	c := httpapi.Config{Role: env("APP_ROLE", "all"), PublicOrigin: env("PUBLIC_ORIGIN", "http://127.0.0.1:5173"), Owner: owner, Issuer: os.Getenv("OIDC_ISSUER"), ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"), RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), DevToken: os.Getenv("DEV_AUTH_TOKEN"), Secure: secure, TrustedProxyCIDRs: strings.FieldsFunc(os.Getenv("TRUSTED_PROXY_CIDRS"), func(r rune) bool { return r == ',' }), WebDir: env("WEB_DIR", "web/dist"), GraphDir: env("GRAPH_DIR", "artifacts/routing")}
+	if !secure {
+		c.DevelopmentOrigins = strings.FieldsFunc(env("DEV_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:8080,http://localhost:8080"), func(r rune) bool { return r == ',' })
+		for i := range c.DevelopmentOrigins {
+			c.DevelopmentOrigins[i] = strings.TrimSpace(c.DevelopmentOrigins[i])
+		}
+	}
 	if c.Role != "all" && c.Role != "api" && c.Role != "gateway" && c.Role != "worker" {
 		log.Fatal("APP_ROLE must be all, api, gateway or worker")
 	}
