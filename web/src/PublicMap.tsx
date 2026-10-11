@@ -466,9 +466,6 @@ export function PublicMap() {
     <main className="public-app" id="main-content">
       <MapView
         incidents={incidents}
-        overview={!viewCells.length ? snapshot.overview : []}
-        overviewMode={!viewCells.length}
-        publicControls
         exitCoordinates={route ? initialExit(route) : undefined}
         refuges={eligible}
         fix={location.fix}

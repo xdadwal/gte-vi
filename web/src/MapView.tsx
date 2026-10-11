@@ -5,16 +5,12 @@ import type * as GeoJSON from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
-import type { Incident, Refuge, Fix, Overview } from "./model";
+import type { Incident, Refuge, Fix } from "./model";
 import { ll, REPORT_CELL_METERS } from "./model";
 import { useSettings } from "./settings";
 import { hotspotFeatures, severityColor, severityExpression } from "./hotspots";
-import { groupMapLabels } from "./marker-layout";
 type Props = {
   incidents: Incident[];
-  overview?: Overview[];
-  overviewMode?: boolean;
-  publicControls?: boolean;
   exitCoordinates?: [number, number][];
   refuges: Refuge[];
   fix?: Fix | null;
@@ -45,7 +41,6 @@ export function MapView(props: Props) {
   const markerState = useRef<{
     props: Props;
     colors: string[];
-    layout: string;
   } | null>(null);
   latest.current = props;
   function update() {
@@ -131,155 +126,52 @@ export function MapView(props: Props) {
     if (!m || !ready.current) return;
     const p = latest.current;
     const config = settingsRef.current;
-    const overviewMode = p.overviewMode ?? Boolean(p.overview?.length);
-    const projected = p.incidents.map((incident) => {
-      const [x, y] = incident.cell.split(":").map(Number);
-      const center = ll(
-        (x + 0.5) * REPORT_CELL_METERS,
-        (y + 0.5) * REPORT_CELL_METERS,
-      );
-      const point = m.project(center);
-      return { x: point.x, y: point.y, item: { incident, center } };
-    });
-    const incidentGroups = overviewMode ? [] : groupMapLabels(projected);
-    const overviewGroups = overviewMode
-      ? groupMapLabels(
-          (p.overview || []).map((cluster) => {
-            const point = m.project([cluster.lon, cluster.lat]);
-            return { x: point.x, y: point.y, item: cluster };
-          }),
-        )
-      : [];
-    const layout = JSON.stringify(
-      overviewMode
-        ? overviewGroups.map((group) => [
-            group.anchor.lon,
-            group.anchor.lat,
-            group.members,
-          ])
-        : incidentGroups.map((group) => [
-            group.anchor.incident.id,
-            group.members.map((member) => member.incident.id),
-          ]),
-    );
+    updateMarkerScale();
     const previous = markerState.current;
     if (
-      previous?.layout === layout &&
-      previous.props.incidents === p.incidents &&
-      (!overviewMode || previous.props.overview === p.overview) &&
+      previous?.props.incidents === p.incidents &&
       previous.props.refuges === p.refuges &&
       previous.props.entrance === p.entrance &&
       previous.colors === config.starColors
     )
       return;
-    // MapLibre moves existing DOM markers itself. Rebuild only when grouping or
-    // marker data changes, preserving focus and avoiding churn during gestures.
-    markerState.current = { props: p, colors: config.starColors, layout };
+    // Camera changes resize badge contents without replacing the touch targets.
+    markerState.current = { props: p, colors: config.starColors };
     markers.current.forEach((marker) => marker.remove());
     markers.current = [];
-    function addGroup(
-      count: number,
-      center: [number, number],
-      inspect: () => void,
-    ) {
+    for (const i of p.incidents) {
+      const [x, y] = i.cell.split(":").map(Number);
+      const center = ll(
+        (x + 0.5) * REPORT_CELL_METERS,
+        (y + 0.5) * REPORT_CELL_METERS,
+      );
       const button = document.createElement("button");
-      button.className = "map-label overview-label";
-      button.textContent = String(count);
+      button.className =
+        "map-label " + (i.status === "pending" ? "pending" : "");
+      button.style.setProperty(
+        "--severity-color",
+        i.status === "pending"
+          ? "#8b8170"
+          : config.starColors[
+              Math.max(0, Math.min(4, Math.round(i.average) - 1))
+            ],
+      );
+      const badge = document.createElement("span");
+      badge.className = "map-badge";
+      badge.textContent =
+        i.status === "active" ? `${i.average.toFixed(1)} ★` : "Pending";
+      button.append(badge);
       button.setAttribute(
         "aria-label",
-        `${count} reported areas. Zoom to inspect`,
+        i.status === "active"
+          ? `Incident ${i.average.toFixed(1)} stars, ${i.count} reports`
+          : `Pending incident, ${i.count} reports`,
       );
-      button.onclick = inspect;
+      button.onclick = () => latest.current.onSelect?.([i]);
       markers.current.push(
-        new maplibregl.Marker({ element: button }).setLngLat(center).addTo(m!),
+        new maplibregl.Marker({ element: button }).setLngLat(center).addTo(m),
       );
     }
-    function inspectGroup(
-      centers: [number, number][],
-      minimumZoom: number,
-      anchor: [number, number],
-    ) {
-      if (centers.length === 1) {
-        m!.easeTo({ center: centers[0], zoom: minimumZoom });
-        return;
-      }
-      const bounds = new maplibregl.LngLatBounds();
-      centers.forEach((center) => bounds.extend(center));
-      const desktop = m!.getContainer().clientWidth >= 768;
-      const camera = m!.cameraForBounds(bounds, {
-        padding: p.publicControls
-          ? {
-              top: 120,
-              right: 64,
-              bottom: desktop ? 64 : 280,
-              left: desktop ? 400 : 64,
-            }
-          : 64,
-        maxZoom: 19,
-      });
-      if (camera && (camera.zoom || 0) >= minimumZoom) {
-        m!.easeTo(camera);
-      } else {
-        // A long connected chain cannot always fit at a closer zoom. Inspect
-        // progressively around the tapped badge, rather than overriding a
-        // fitted camera and unexpectedly shifting its members under controls.
-        m!.easeTo({
-          center: anchor,
-          zoom: Math.min(m!.getMaxZoom(), minimumZoom),
-        });
-      }
-    }
-    if (overviewMode) {
-      for (const group of overviewGroups) {
-        addGroup(
-          group.members.reduce((sum, cluster) => sum + cluster.count, 0),
-          [group.anchor.lon, group.anchor.lat],
-          () =>
-            inspectGroup(
-              group.members.map((cluster) => [cluster.lon, cluster.lat]),
-              Math.max(14, m.getZoom() + 1),
-              [group.anchor.lon, group.anchor.lat],
-            ),
-        );
-      }
-    }
-    if (!overviewMode)
-      for (const group of incidentGroups) {
-        const { incident: i, center } = group.anchor;
-        if (group.members.length > 1) {
-          addGroup(group.members.length, center, () => {
-            inspectGroup(
-              group.members.map((member) => member.center),
-              m.getZoom() + 1,
-              center,
-            );
-          });
-          continue;
-        }
-        const button = document.createElement("button");
-        button.className =
-          "map-label " + (i.status === "pending" ? "pending" : "");
-        button.style.setProperty(
-          "--severity-color",
-          i.status === "pending"
-            ? "#8b8170"
-            : config.starColors[
-                Math.max(0, Math.min(4, Math.round(i.average) - 1))
-              ],
-        );
-        button.textContent =
-          i.status === "active" ? `${i.average.toFixed(1)} ★` : "Pending";
-        button.setAttribute(
-          "aria-label",
-          i.status === "active"
-            ? `Incident ${i.average.toFixed(1)} stars, ${i.count} reports`
-            : `Pending incident, ${i.count} reports`,
-        );
-        button.onclick = () => latest.current.onSelect?.([i]);
-        markers.current.push(
-          new maplibregl.Marker({ element: button }).setLngLat(center).addTo(m),
-        );
-      }
     for (const r of p.refuges) {
       const button = document.createElement("button");
       button.className = "refuge-marker";
@@ -303,6 +195,14 @@ export function MapView(props: Props) {
           .addTo(m),
       );
     }
+  }
+  function updateMarkerScale() {
+    const zoom = map.current?.getZoom();
+    if (zoom === undefined) return;
+    // At zoom 14+, badges are 30% smaller than the previous 64/76 x 44px
+    // cards. Zooming out reduces only the badge, never the report footprint.
+    const scale = 0.56 + Math.max(0, Math.min(1, (zoom - 11) / 3)) * 0.14;
+    root.current?.style.setProperty("--map-badge-scale", String(scale));
   }
   useEffect(() => {
     const m = new maplibregl.Map({
@@ -400,11 +300,10 @@ export function MapView(props: Props) {
       if (markerFrame) return;
       markerFrame = requestAnimationFrame(() => {
         markerFrame = 0;
-        updateMarkers();
+        updateMarkerScale();
       });
     };
-    m.on("move", refreshMarkers);
-    m.on("resize", refreshMarkers);
+    m.on("zoom", refreshMarkers);
     m.on("moveend", bounds);
     m.on("movestart", (event) => {
       if (event.originalEvent) interacted.current = true;
@@ -434,8 +333,6 @@ export function MapView(props: Props) {
   useEffect(update, [
     config,
     props.incidents,
-    props.overviewMode === false ? undefined : props.overview,
-    props.overviewMode,
     props.exitCoordinates,
     props.refuges,
     props.fix,

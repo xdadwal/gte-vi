@@ -110,7 +110,8 @@ test("severity hotspots retain star labels and pending state across viewports", 
   ).toBe(6);
   await page.getByRole("button", { name: "Zoom out", exact: true }).click();
   await page.getByRole("button", { name: "Zoom out", exact: true }).click();
-  await expect(page.locator(".overview-label")).not.toHaveCount(0);
+  await expect(page.locator(".overview-label")).toHaveCount(0);
+  await expect(page.locator(".map-label")).toHaveCount(6);
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await expect(page.locator(".overview-label")).toHaveCount(0);

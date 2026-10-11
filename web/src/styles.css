@@ -486,30 +486,34 @@ time {
 .map-label {
   display: grid;
   place-items: center;
-  width: 64px;
+  width: max(44px, calc(64px * var(--map-badge-scale, 0.7)));
   height: 44px;
   padding: 0;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  background: var(--paper);
-  border: 1px solid var(--severity-color, #946017);
-  border-radius: 5px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   font-weight: 700;
-  box-shadow: 0 2px 8px rgb(39 40 33/0.1);
-  font-size: 0.85rem;
-  min-height: 44px;
-}
-.map-label.overview-label {
-  width: 44px;
-  border-radius: 50%;
-  border-color: var(--ink);
-  font-size: 1rem;
-  z-index: 1;
+  font-variant-numeric: tabular-nums;
 }
 .map-label.pending {
-  width: 76px;
-  border-style: dashed;
+  width: max(44px, calc(76px * var(--map-badge-scale, 0.7)));
   font-weight: 500;
+}
+.map-badge {
+  display: grid;
+  place-items: center;
+  width: calc(64px * var(--map-badge-scale, 0.7));
+  height: calc(44px * var(--map-badge-scale, 0.7));
+  white-space: nowrap;
+  background: var(--paper);
+  border: 1px solid var(--severity-color, #946017);
+  border-radius: 4px;
+  font-size: max(10px, calc(1.1rem * var(--map-badge-scale, 0.7)));
+  line-height: 1;
+}
+.pending .map-badge {
+  width: calc(76px * var(--map-badge-scale, 0.7));
+  border-style: dashed;
 }
 .refuge-marker {
   width: 42px;
@@ -1209,14 +1213,6 @@ time {
     min-height: 44px;
   }
 }
-.overview-label {
-  border-radius: 50%;
-  min-width: 40px;
-  min-height: 40px;
-  background: var(--ink);
-  color: var(--paper);
-}
-
 .maplibregl-ctrl-bottom-left {
   bottom: 200px !important;
   left: 6px !important;
@@ -1233,7 +1229,7 @@ time {
 }
 
 /* Severity is always paired with a numeric star label. */
-.map-label:not(.overview-label) {
+.map-badge {
   box-shadow:
     inset 0 -3px var(--severity-color, #946017),
     0 2px 8px rgb(39 40 33 / 0.1);
