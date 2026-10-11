@@ -1,0 +1,63 @@
+import { it, expect, vi, afterEach } from "vitest";
+import { render, fireEvent, screen, act } from "@testing-library/react";
+import { HoldButton } from "./HoldButton";
+afterEach(() => vi.useRealTimers());
+it("cancels early release and submits exactly once after3s", () => {
+  vi.useFakeTimers();
+  const submit = vi.fn();
+  render(<HoldButton disabled={false} onComplete={submit} />);
+  const b = screen.getByRole("button", { name: "Hold 3s to report" });
+  fireEvent.keyDown(b, { key: " " });
+  act(() => vi.advanceTimersByTime(2000));
+  fireEvent.keyUp(b, { key: " " });
+  act(() => vi.advanceTimersByTime(2000));
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(b, { key: "Enter" });
+  act(() => vi.advanceTimersByTime(3000));
+  expect(submit).toHaveBeenCalledTimes(1);
+  act(() => vi.advanceTimersByTime(5000));
+  expect(submit).toHaveBeenCalledTimes(1);
+});
+it("blur cancels keyboard hold", () => {
+  vi.useFakeTimers();
+  const submit = vi.fn();
+  render(<HoldButton disabled={false} onComplete={submit} />);
+  const b = screen.getByRole("button");
+  fireEvent.keyDown(b, { key: "Enter" });
+  fireEvent.blur(b);
+  act(() => vi.advanceTimersByTime(4000));
+  expect(submit).not.toHaveBeenCalled();
+});
+it.each(["drag outside", "pointer cancel"])(
+  "%s cancels pointer hold",
+  (action) => {
+    vi.useFakeTimers();
+    const submit = vi.fn();
+    render(<HoldButton disabled={false} onComplete={submit} />);
+    const button = screen.getByRole("button");
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1 });
+    act(() => vi.advanceTimersByTime(1000));
+    if (action === "drag outside")
+      fireEvent.pointerMove(button, { clientX: 100, clientY: 100 });
+    else fireEvent.pointerCancel(button);
+    act(() => vi.advanceTimersByTime(3000));
+    expect(submit).not.toHaveBeenCalled();
+  },
+);
+it("cancels an in-progress hold when runtime duration changes", () => {
+  vi.useFakeTimers();
+  const submit = vi.fn();
+  const { rerender } = render(
+    <HoldButton disabled={false} duration={3} onComplete={submit} />,
+  );
+  fireEvent.keyDown(screen.getByRole("button"), { key: "Enter" });
+  act(() => vi.advanceTimersByTime(1000));
+  rerender(<HoldButton disabled={false} duration={2} onComplete={submit} />);
+  act(() => vi.advanceTimersByTime(3000));
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Hold 2s to report" }), {
+    key: "Enter",
+  });
+  act(() => vi.advanceTimersByTime(2000));
+  expect(submit).toHaveBeenCalledTimes(1);
+});

@@ -31,3 +31,23 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local development
+.worktrees/
+.superpowers/
+node_modules/
+web/dist/
+artifacts/
+*.log
+bin/
+
+*.tsbuildinfo
+web/playwright-report/
+web/test-results/
+
+# Local planning history and review screenshots
+/docs/superpowers/
+/docs/screenshots/
+
+# Local phone-preview certificate helper
+/scripts/dev-cert.sh
