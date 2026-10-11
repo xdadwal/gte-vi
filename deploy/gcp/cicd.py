@@ -23,7 +23,7 @@ PERMISSIONS = [
     'compute.regionOperations.get', 'compute.globalOperations.get', 'compute.zoneOperations.get',
     'compute.subnetworks.use', 'compute.subnetworks.get',
     'compute.networks.use', 'compute.networks.get',
-    'compute.healthChecks.get', 'compute.healthChecks.useReadOnly',
+    'compute.healthChecks.get', 'compute.healthChecks.use',
 ]
 
 
