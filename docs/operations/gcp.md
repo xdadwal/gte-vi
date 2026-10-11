@@ -170,3 +170,101 @@ Test 500 → 1000 → 2000 → 5000 concurrent clients with writes, expiry and r
 bursts, then one-hour sustained workloads. Neither this provisioning nor earlier
 laptop measurements establish 100000-user capacity. See
 [verification scope](verification.md) and [runbook](runbook.md).
+
+## Continuous deployment from GitHub
+
+`cloudbuild.yaml` tests, builds and publishes the application image. The
+`gte-master-deploy` Cloud Build trigger runs on pushes to **`master` only** and
+enables production deployment. Pull requests keep the GitHub Actions checks;
+they receive no deployment identity or production credentials.
+
+Configure the trigger after foundation provisioning:
+
+```sh
+python3 deploy/gcp/cicd.py --project=PROJECT_ID --region=asia-south2 --origin=https://grandtheftelections.in
+```
+
+The helper configures a second-generation `gte-github` connection and links
+`xdadwal/gte-vi`. Its first run may print a browser authorization link: install
+Google's Cloud Build GitHub App with access to this repository, then rerun the
+helper. This authorization is separate from application admin sign-in. The
+connection credential stays in Secret Manager under the Cloud Build service
+agent; the helper never exports a personal `gh` credential or downloads a key.
+Temporary Secret Manager administration for the installation handshake is
+removed once the connection reaches `COMPLETE`.
+
+The existing `gte-build` identity has registry/build-bucket access, log writes,
+a custom Compute role for template creation, managed-group updates and worker
+metadata, IAP/OS Login access, and permission to attach the runtime identity.
+It has no direct application-secret access grant. Its privileged worker SSH
+access means only reviewed, trusted code should reach `master`. The provisioner
+does not change GitHub branch protections.
+
+### Pipeline behaviour
+
+1. A disposable Docker network runs PostGIS and Redis. Go race tests/vet,
+   frontend tests/build and the normal Playwright suites run against that stack.
+   Browser fixtures never connect to production. Python deployment tests also
+   run before building the release image.
+2. The image is tagged with commit SHA and build ID, pushed to Artifact Registry,
+   and resolved to an immutable digest. The deployment helper rejects mutable
+   tags and images outside the project's application registry.
+3. A Cloud Storage object created with `ifGenerationMatch=0` serializes releases.
+   Builds wait up to 15 minutes for this lock; an obsolete commit is skipped if
+   it is no longer GitHub `master` HEAD after acquiring the lock.
+4. A new immutable instance template is cloned from the current web template
+   with the new image/startup script. The worker's image/launcher is updated
+   through private IAP SSH and its health is checked before updating web VMs.
+   The single worker restart can briefly interrupt report freshness and streams.
+5. The regional web group rolls out with zero allowed unavailable instances and
+   one surge slot per configured zone. An application health check gates rollout;
+   failed health checks **do not** enable destructive autohealing. Existing SSE
+   connections can reconnect during replacement/draining.
+6. Success requires every web VM to be running, on the new template and healthy,
+   with the group stable and its version target reached. Read-only public checks
+   verify HTTPS/frontend, health, polling snapshot, initial SSE snapshot and a
+   versioned graph tile. No admin password, report or refuge fixture is used.
+
+Release records live in `gs://PROJECT_ID-gte-builds/deploy/releases/BUILD_ID.json`.
+They include commit/digest, previous worker image and previous web template.
+`deploy/current.json` is updated only after verification. Old images/templates
+are retained. The rollout deadline is 25 minutes, plus lock wait; Cloud Build's
+whole-pipeline deadline is one hour. If checks or image publication fail, no
+production deployment starts. Default manual builds use `_DEPLOY=false`:
+
+```sh
+gcloud builds submit . --project=PROJECT_ID --region=asia-south2 --config=cloudbuild.yaml --substitutions=COMMIT_SHA=FULL_COMMIT_SHA,_DEPLOY=false --gcs-source-staging-dir=gs://PROJECT_ID-gte-builds/source
+```
+
+Keep schema/protocol changes backward compatible across the worker and old/new
+web instances. This pipeline does not infer migration compatibility or reverse
+database changes. Incompatible changes require disabling the trigger and a
+coordinated maintenance deployment described in the runbook.
+
+### Failed or cancelled deployments
+
+A failure after deployment starts deliberately retains `deploy/lock.json`.
+Cancellation/timeouts can leave a Compute rollout running; the next build must
+not assume that an expired build means resources stopped changing. Inspect the
+owning build, release record, worker container, group version and backend health.
+Stop or finish the rollout before allowing another release. Never clear a lock
+owned by an active build.
+
+For a compatible-image rollback, restore the recorded worker image and launcher,
+restart/check the worker, then roll the group back to `previousTemplate` using
+zero unavailable instances. Check HTTPS, SSE, polling and routing again. A
+rollback of application images does not roll back the database; do not use it
+across an incompatible migration.
+
+After the owning build and any Compute operation are terminal and the fleet is
+in a reviewed state, inspect the lock generation and remove **that generation**:
+
+```sh
+gcloud storage cat gs://PROJECT_ID-gte-builds/deploy/lock.json
+gcloud storage objects describe gs://PROJECT_ID-gte-builds/deploy/lock.json --format='value(generation)'
+# Replace LOCK_GENERATION with the generation you inspected.
+gcloud storage rm gs://PROJECT_ID-gte-builds/deploy/lock.json --if-generation-match=LOCK_GENERATION
+```
+
+Rerun the latest master build after recovery. Merely rerunning the failed build
+without resolving its lock is not a recovery procedure.

@@ -102,10 +102,19 @@ test("severity hotspots retain star labels and pending state across viewports", 
     path: "../artifacts/screenshots/hotspots-mobile.png",
   });
   // The invisible footprint remains selectable away from the star marker.
-  const marker = await page
-    .getByRole("button", { name: "Incident 5.0 stars, 5 reports", exact: true })
-    .boundingBox();
-  expect(marker).not.toBeNull();
+  const label = page.getByRole("button", {
+    name: "Incident 5.0 stars, 5 reports",
+    exact: true,
+  });
+  // Live refreshes replace DOM markers. Retry the measurement if the marker
+  // detaches between locator resolution and the browser's layout query.
+  let marker: Awaited<ReturnType<typeof label.boundingBox>> = null;
+  await expect
+    .poll(async () => {
+      marker = await label.boundingBox();
+      return marker !== null;
+    })
+    .toBe(true);
   await page.mouse.click(
     marker!.x + marker!.width / 2,
     marker!.y + marker!.height + 12,
