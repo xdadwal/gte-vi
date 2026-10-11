@@ -4,7 +4,7 @@ Thanks for helping improve the map. Small, focused contributions are easiest to 
 
 ## Set up locally
 
-You’ll need Go 1.26 or later, Node.js 22 or later, and Docker with Docker Compose. CI currently uses Go 1.27.2 and Node.js 22; dependency versions are recorded in `go.mod` and `web/package-lock.json`.
+You’ll need Go 1.26 or later, Node.js 22 or later, Docker with Docker Compose, and Python 3 for the deployment helper tests. CI currently uses Go 1.27.2 and Node.js 22; dependency versions are recorded in `go.mod` and `web/package-lock.json`.
 
 From your checkout:
 
@@ -84,6 +84,7 @@ docker compose exec db createdb -U gte gte_test
 Run the backend and frontend checks:
 
 ```sh
+python3 -m unittest discover -s deploy/gcp/tests -v
 TEST_DATABASE_URL='postgres://gte:local-only@127.0.0.1:55432/gte_test?sslmode=disable' \
 TEST_REDIS_URL='redis://127.0.0.1:56379' \
 go test -race ./...

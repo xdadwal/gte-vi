@@ -1,0 +1,44 @@
+# Triggered by master pushes. PRs use the unprivileged GitHub checks workflow.
+steps:
+  - id: checks
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args: [deploy/gcp/ci.sh]
+    env: ['BUILD_ID=$BUILD_ID']
+  - id: deployment-tests
+    name: python:3.13-slim
+    entrypoint: python
+    args: ['-m', unittest, discover, '-s', deploy/gcp/tests, '-v']
+  - id: image
+    name: gcr.io/cloud-builders/docker
+    args: [build, '-t', '${_REGION}-docker.pkg.dev/$PROJECT_ID/gte/app:$COMMIT_SHA-$BUILD_ID', .]
+  - id: publish
+    name: gcr.io/cloud-builders/docker
+    args: [push, '${_REGION}-docker.pkg.dev/$PROJECT_ID/gte/app:$COMMIT_SHA-$BUILD_ID']
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    entrypoint: bash
+    args:
+      - '-ceu'
+      - |
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends python3 git openssh-client ca-certificates
+        image="${_REGION}-docker.pkg.dev/$PROJECT_ID/gte/app:$COMMIT_SHA-$BUILD_ID"
+        digest=$$(gcloud artifacts docker images describe "$$image" --format='value(image_summary.digest)')
+        test -n "$$digest"
+        mode=--dry-run
+        if [ "${_DEPLOY}" = true ]; then mode=; fi
+        python3 deploy/gcp/release.py --project="$PROJECT_ID" --region="${_REGION}" \
+          --image="${_REGION}-docker.pkg.dev/$PROJECT_ID/gte/app@$$digest" \
+          --commit="$COMMIT_SHA" --build-id="$BUILD_ID" --origin="${_ORIGIN}" $$mode
+
+substitutions:
+  _REGION: asia-south2
+  _ORIGIN: https://grandtheftelections.in
+  _DEPLOY: 'false'
+serviceAccount: projects/$PROJECT_ID/serviceAccounts/gte-build@$PROJECT_ID.iam.gserviceaccount.com
+logsBucket: gs://$PROJECT_ID-gte-builds/logs
+options:
+  logging: LEGACY
+  machineType: E2_HIGHCPU_8
+timeout: 3600s

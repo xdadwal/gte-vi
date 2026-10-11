@@ -33,6 +33,8 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - run: python3 -m unittest discover -s deploy/gcp/tests -v
+      - run: bash -n deploy/gcp/bootstrap.sh deploy/gcp/ci.sh deploy/gcp/ci-tests.sh
       - run: go test -race ./...
       - run: go vet ./...
       - run: npm ci && npm test && npm run build
