@@ -198,6 +198,12 @@ export function useLocation() {
   const watch = useRef<number | null>(null);
   const enabled = useRef(false);
   const start = () => {
+    if (window.isSecureContext === false) {
+      setError(
+        "Location requires HTTPS on this device. Open the secure preview to report or find a refuge.",
+      );
+      return;
+    }
     if (!navigator.geolocation) {
       setError(
         "Location is unavailable in this browser. You can still browse.",
@@ -223,7 +229,7 @@ export function useLocation() {
         watch.current = null;
         setError(
           e.code === 1
-            ? "Location permission is off. Enable it in your browser to report or find a refuge."
+            ? "Location access is blocked. Allow location for this site and for your browser, then try again."
             : "Could not obtain your location. Try again.",
         );
       },

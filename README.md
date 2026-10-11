@@ -38,6 +38,18 @@ npm run dev --prefix web -- --host 0.0.0.0
 
 Open `http://192.168.1.2:5173` from the other device. Replace the example IP with your current address. Local-network HTTP supports browsing and the development console, but browser geolocation requires a trusted HTTPS origin on phones.
 
+For phone geolocation, create a local HTTPS certificate and trust its CA on the phone:
+
+```sh
+scripts/dev-cert.sh 192.168.1.2
+# Add https://192.168.1.2:8443 to DEV_ALLOWED_ORIGINS and restart the backend.
+DEV_TLS_CERT="$PWD/artifacts/tls/server.pem" DEV_TLS_KEY="$PWD/artifacts/tls/server.key" DEV_TLS_CA="$PWD/artifacts/tls/root.cer" npm run dev --prefix web -- --host 0.0.0.0 --port 8443
+```
+
+The secure map is `https://192.168.1.2:8443`. Download `/dev-ca.cer` from the HTTP preview (start it with `DEV_TLS_CA` set) to install the **GTE Local Development CA** on the test phone. Android: install it as a CA certificate in Encryption & credentials. iOS: install the profile, then enable full trust under General → About → Certificate Trust Settings. After trusting the CA, reload the HTTPS preview and use Report or the location button to request location access. Browser/app location permissions still apply.
+
+The CA lasts one year and server certificates last 30 days. Re-running the script preserves the CA and issues a certificate for the current LAN IP. Keys remain in ignored `artifacts/tls`; the Vite download route serves only the public CA certificate, only in development. Remove the test CA from your phone when finished. Simply bypassing a certificate warning does not establish a trusted HTTPS setup.
+
 ## Prepare the walking graph
 
 Download an OpenStreetMap PBF from [Geofabrik Northern Zone](https://download.geofabrik.de/asia/india/northern-zone.html), then:

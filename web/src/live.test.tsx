@@ -1,6 +1,6 @@
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
-import { useLive } from "./live";
+import { useLive, useLocation } from "./live";
 class Events extends EventTarget {
   static current: Events;
   onerror: (() => void) | null = null;
@@ -17,7 +17,10 @@ beforeEach(() => {
   vi.stubGlobal("EventSource", Events);
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 test("failed fallback remains stale until a successful snapshot", async () => {
   const { result } = renderHook(() => useLive(["1431:6334"]));
   act(() => Events.current.onerror?.());
@@ -90,4 +93,33 @@ test("a delayed refuge response cannot revive a closed stale stream", async () =
   expect(result.current.fresh).toBe(false);
   unmount();
   vi.useRealTimers();
+});
+
+test("insecure location requests explain HTTPS without requesting permission", () => {
+  vi.stubGlobal("isSecureContext", false);
+  const watchPosition = vi.fn();
+  vi.stubGlobal("navigator", {
+    geolocation: { watchPosition, clearWatch: vi.fn() },
+  });
+  const { result } = renderHook(() => useLocation());
+  act(() => result.current.start());
+  expect(result.current.error).toContain("Location requires HTTPS");
+  expect(result.current.error).not.toContain("permission is off");
+  expect(watchPosition).not.toHaveBeenCalled();
+});
+
+test("secure location requests distinguish permission denial from HTTP blocking", () => {
+  vi.stubGlobal("isSecureContext", true);
+  const watchPosition = vi.fn(
+    (_success: unknown, _error: (e: { code: number }) => void) => 1,
+  );
+  vi.stubGlobal("navigator", {
+    geolocation: { watchPosition, clearWatch: vi.fn() },
+  });
+  const { result } = renderHook(() => useLocation());
+  act(() => result.current.start());
+  expect(watchPosition).toHaveBeenCalledOnce();
+  act(() => watchPosition.mock.calls[0][1]({ code: 1 }));
+  expect(result.current.error).toContain("Location access is blocked");
+  expect(result.current.error).not.toContain("requires HTTPS");
 });
