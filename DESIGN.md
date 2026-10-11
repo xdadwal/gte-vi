@@ -18,3 +18,5 @@ Light, desktop-first side navigation: Live incidents, Refuges, Activity, Team ac
 
 ## Shape approval
 Public layout and admin layout explicitly approved in conversation. Fidelity: working production application. Visual direction probe already resolved by approved wireframes and street-atlas direction. North-star artwork is optional reference and cannot change the approved flow.
+
+The public map requests location on load, centers on the first successful fix, and follows subsequent location updates while preserving zoom. Manual panning does not disable following. If location is unavailable or denied, the configured Delhi view remains available. Admin map behavior is unchanged.

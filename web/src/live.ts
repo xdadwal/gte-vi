@@ -303,9 +303,11 @@ export function useLocation() {
         setError("");
       },
       (e) => {
-        if (watch.current !== null)
-          navigator.geolocation.clearWatch(watch.current);
-        watch.current = null;
+        if (e.code === 1) {
+          if (watch.current !== null)
+            navigator.geolocation.clearWatch(watch.current);
+          watch.current = null;
+        }
         setError(
           e.code === 1
             ? "Location access is blocked. Allow location for this site and for your browser, then try again."

@@ -17,6 +17,7 @@ type Props = {
   coordinates?: [number, number][];
   affected?: boolean;
   locate?: number;
+  autoFollow?: boolean;
   selected?: Incident | null;
   onSelect?: (incidents: Incident[]) => void;
   onRefuge?: (r: Refuge) => void;
@@ -210,7 +211,10 @@ export function MapView(props: Props) {
       style:
         import.meta.env.VITE_MAP_STYLE ||
         "https://tiles.openfreemap.org/styles/positron",
-      center: [config.mapLon, config.mapLat],
+      center:
+        props.autoFollow && props.fix
+          ? [props.fix.lon, props.fix.lat]
+          : [config.mapLon, config.mapLat],
       zoom: config.mapZoom,
       attributionControl: false,
     });
@@ -309,7 +313,7 @@ export function MapView(props: Props) {
       if (event.originalEvent) interacted.current = true;
     });
     m.on("dragstart", () => {
-      following.current = false;
+      if (!latest.current.autoFollow) following.current = false;
     });
     m.on("click", "incident-fill", (e) => {
       const ids = new Set((e.features || []).map((f) => f.properties?.id));
@@ -343,9 +347,12 @@ export function MapView(props: Props) {
   useEffect(() => {
     if (revision && !initialViewApplied.current) {
       initialViewApplied.current = true;
-      if (!interacted.current && !following.current)
+      if (!interacted.current)
         map.current?.jumpTo({
-          center: [config.mapLon, config.mapLat],
+          center:
+            latest.current.autoFollow && latest.current.fix
+              ? [latest.current.fix.lon, latest.current.fix.lat]
+              : [config.mapLon, config.mapLat],
           zoom: config.mapZoom,
         });
     }
@@ -362,12 +369,12 @@ export function MapView(props: Props) {
     }
   }, [props.locate]);
   useEffect(() => {
-    if (following.current && props.fix)
+    if ((props.autoFollow || following.current) && props.fix)
       map.current?.easeTo({
         center: [props.fix.lon, props.fix.lat],
         duration: 250,
       });
-  }, [props.fix]);
+  }, [props.fix, props.autoFollow]);
   useEffect(() => {
     if (props.selected) {
       const [x, y] = props.selected.cell.split(":").map(Number);

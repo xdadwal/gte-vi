@@ -102,6 +102,9 @@ export function PublicMap() {
     [affected, setAffected] = useState(false),
     [calculating, setCalculating] = useState(false),
     [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    location.start();
+  }, []);
   const alertSound = useRef<AlertSound | null>(null);
   if (!alertSound.current) alertSound.current = new AlertSound();
   useEffect(() => {
@@ -469,6 +472,7 @@ export function PublicMap() {
         exitCoordinates={route ? initialExit(route) : undefined}
         refuges={eligible}
         fix={location.fix}
+        autoFollow
         coordinates={route?.coordinates}
         affected={affected}
         locate={locate}

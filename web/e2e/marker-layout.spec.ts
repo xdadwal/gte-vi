@@ -183,3 +183,111 @@ test("dense areas retain every rating without a count badge", async ({
   await expect(page.locator(".map-label")).toHaveCount(5);
   await expect(page.locator(".overview-label")).toHaveCount(0);
 });
+
+test("public map automatically centers and follows location after panning", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({
+    longitude: center[0],
+    latitude: center[1],
+    accuracy: 10,
+  });
+  await fixtures(page, 14);
+  await page.route("**/api/v1/settings", (route) =>
+    route.fulfill({
+      json: {
+        revision: 100,
+        values: {
+          ...DEFAULT_SETTINGS,
+          mapLon: center[0] + 0.04,
+          mapLat: center[1] + 0.04,
+          mapZoom: 14,
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  const badge = page.getByRole("button", {
+    name: "Incident 3.0 stars, 8 reports",
+    exact: true,
+  });
+  const horizontalOffset = async () => {
+    const label = await badge.boundingBox();
+    const map = await page.locator(".map-view").boundingBox();
+    return label && map
+      ? Math.abs(label.x + label.width / 2 - map.x - map.width / 2)
+      : Infinity;
+  };
+  await expect.poll(horizontalOffset).toBeLessThan(3);
+  // A user pan must not disable automatic following on the next GPS update.
+  await page.mouse.move(195, 350);
+  await page.mouse.down();
+  await page.mouse.move(295, 350, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(horizontalOffset).toBeGreaterThan(40);
+  await badge.click({ trial: true });
+  await context.setGeolocation({
+    longitude: center[0] + 0.00001,
+    latitude: center[1],
+    accuracy: 8,
+  });
+  await expect.poll(horizontalOffset).toBeLessThan(3);
+  await page.getByRole("button", { name: "Ack", exact: true }).click();
+  await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  const visualBadge = badge.locator(".map-badge");
+  await expect
+    .poll(async () => (await visualBadge.boundingBox())?.width)
+    .toBeCloseTo(41.81, 1);
+  await context.setGeolocation({
+    longitude: center[0] + 0.00002,
+    latitude: center[1],
+    accuracy: 7,
+  });
+  await expect.poll(horizontalOffset).toBeLessThan(3);
+  await expect
+    .poll(async () => (await visualBadge.boundingBox())?.width)
+    .toBeCloseTo(41.81, 1);
+});
+
+test("delayed settings set the initial view when location is denied", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "geolocation", {
+      value: {
+        watchPosition(_success: unknown, error: (e: { code: number }) => void) {
+          setTimeout(() => error({ code: 1 }), 0);
+          return 1;
+        },
+        clearWatch() {},
+      },
+    });
+  });
+  await fixtures(page, 14);
+  await page.route("**/api/v1/settings", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fallback();
+  });
+  await page.goto("/");
+  const badge = page.getByRole("button", {
+    name: "Incident 3.0 stars, 8 reports",
+    exact: true,
+  });
+  await expect
+    .poll(async () => (await badge.locator(".map-badge").boundingBox())?.width)
+    .toBeCloseTo(44.8, 0);
+  await expect
+    .poll(async () => {
+      const label = await badge.boundingBox();
+      const map = await page.locator(".map-view").boundingBox();
+      return label && map
+        ? Math.abs(label.x + label.width / 2 - map.x - map.width / 2)
+        : Infinity;
+    })
+    .toBeLessThan(3);
+  await expect(page.getByText(/Location access is blocked/)).toBeVisible();
+});

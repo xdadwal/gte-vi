@@ -7,7 +7,7 @@ test("nearby sound pulses until Ack immediately silences it", async ({
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
     viewport: { width: 390, height: 844 },
-    geolocation: { longitude: 77.209, latitude: 28.6139, accuracy: 15 },
+    geolocation: { longitude: 77.3, latitude: 28.65, accuracy: 15 },
     permissions: ["geolocation"],
   });
   const page = await context.newPage();
@@ -89,6 +89,11 @@ test("nearby sound pulses until Ack immediately silences it", async ({
   await page.getByRole("button", { name: "Map settings", exact: true }).click();
   await page.getByLabel("Sound for nearby alerts").check();
   await page.getByRole("button", { name: "Locate me", exact: true }).click();
+  await context.setGeolocation({
+    longitude: 77.209,
+    latitude: 28.6139,
+    accuracy: 15,
+  });
   const ack = page.getByRole("button", { name: "Ack", exact: true });
   await expect(ack).toBeVisible();
   const stats = () =>
