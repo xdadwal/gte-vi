@@ -13,6 +13,7 @@ import urllib.parse
 
 PERMISSIONS = [
     'compute.instanceTemplates.create', 'compute.instanceTemplates.get', 'compute.instanceTemplates.list',
+    'compute.instanceTemplates.useReadOnly',
     'compute.instanceGroupManagers.get', 'compute.instanceGroupManagers.update',
     'compute.instances.get', 'compute.instances.list', 'compute.instances.setMetadata',
     'compute.projects.get', 'compute.zones.get', 'compute.zones.list',
