@@ -9,7 +9,6 @@ import (
 	"github.com/xdadwal/gte-vi/internal/platform"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -79,7 +78,7 @@ var dummyPasswordOnce sync.Once
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	// Requiring an allowed Origin also prevents login CSRF; cookies alone are not a login proof.
 	origin := r.Header.Get("Origin")
-	if origin == "" || (origin != a.Config.PublicOrigin && (a.Config.Secure || !slices.Contains(a.Config.DevelopmentOrigins, origin))) {
+	if !a.allowedOrigin(origin) {
 		fail(w, 403, "request origin rejected")
 		return
 	}

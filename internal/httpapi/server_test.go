@@ -65,3 +65,63 @@ func TestZoneValidation(t *testing.T) {
 		}
 	}
 }
+
+// Removing the additional-origin check must break both normal writes and login.
+func TestProductionAllowedOrigins(t *testing.T) {
+	a := New(nil, nil, Config{PublicOrigin: "https://map.example", AllowedOrigins: []string{"https://alternate.example"}, DevelopmentOrigins: []string{"http://localhost:5173"}, Secure: true})
+	for _, tc := range []struct {
+		origin  string
+		allowed bool
+	}{
+		{"https://map.example", true}, {"https://alternate.example", true},
+		{"https://alternate.example.evil.test", false}, {"http://alternate.example", false},
+		{"https://alternate.example:444", false}, {"null", false}, {"http://localhost:5173", false},
+	} {
+		for _, path := range []string{"/api/v1/admin/moderate", "/api/v1/auth/login"} {
+			t.Run(tc.origin+path, func(t *testing.T) {
+				r := httptest.NewRequest("POST", path, strings.NewReader(`{}`))
+				r.Header.Set("Origin", tc.origin)
+				w := httptest.NewRecorder()
+				a.Handler().ServeHTTP(w, r)
+				want := http.StatusForbidden
+				if tc.allowed {
+					want = http.StatusUnauthorized
+					if path == "/api/v1/auth/login" {
+						want = http.StatusServiceUnavailable
+					}
+				}
+				if w.Code != want {
+					t.Fatalf("got %d want %d: %s", w.Code, want, w.Body.String())
+				}
+			})
+		}
+	}
+	w := httptest.NewRecorder()
+	a.Handler().ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(`{}`)))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("login without Origin got %d", w.Code)
+	}
+}
+
+func TestValidateProductionOrigins(t *testing.T) {
+	for _, origin := range []string{"http://alternate.example", "https://*.example", "https://user@alternate.example", "https://alternate.example/", "https://alternate.example/path", "https://alternate.example?query", "https://alternate.example#fragment", "https://", "null", ""} {
+		t.Run(origin, func(t *testing.T) {
+			for _, c := range []Config{
+				{PublicOrigin: origin, Secure: true},
+				{PublicOrigin: "https://map.example", AllowedOrigins: []string{origin}, Secure: true},
+			} {
+				if c.ValidateOrigins() == nil {
+					t.Fatalf("accepted invalid origin %q", origin)
+				}
+			}
+		})
+	}
+	for _, c := range []Config{
+		{PublicOrigin: "https://map.example", AllowedOrigins: []string{"https://alternate.example", "https://www.alternate.example:8443"}, Secure: true},
+		{PublicOrigin: "http://localhost:5173"},
+	} {
+		if err := c.ValidateOrigins(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

@@ -268,3 +268,24 @@ gcloud storage rm gs://PROJECT_ID-gte-builds/deploy/lock.json --if-generation-ma
 
 Rerun the latest master build after recovery. Merely rerunning the failed build
 without resolving its lock is not a recovery procedure.
+
+### Additional application domains
+
+Keep `PUBLIC_ORIGIN` as the primary HTTPS origin. Add other trusted origins to
+`ALLOWED_ORIGINS` in the `gte-app-config` Secret Manager JSON as a comma-separated
+string, for example `https://alternate.example,https://www.alternate.example`.
+The launcher passes this setting to the app. Deploy/restart the application after
+changing it; existing processes do not reload environment configuration.
+Origins must be exact HTTPS origins without paths, wildcards or credentials.
+Both login and other write requests use the same allowlist. Cookies and browser
+location permissions remain separate for each hostname; this does not enable
+cross-domain login sharing or cross-origin browser API access.
+
+For each hostname, point DNS to the reserved load-balancer IP and attach a
+Google-managed certificate covering it. Retain the existing active certificate
+while the new one provisions. The existing HTTPS URL map serves the same backend
+for all hosts. Configure the HTTP URL map to redirect to HTTPS while preserving
+the requested hostname (omit `hostRedirect`). Verify certificate status, public
+HTTPS responses, same-host HTTP redirects, and accepted/rejected origin checks.
+The initial `https.py` helper provisions a single domain; do not rerun it to
+reconcile a deployment that has been extended to multiple domains.

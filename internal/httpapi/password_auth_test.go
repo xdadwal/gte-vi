@@ -59,7 +59,7 @@ func TestPasswordLoginAndReset(t *testing.T) {
 	keys := []string{"login:ip:" + platform.Hash("127.0.0.241"), "login:account:" + platform.Hash(email), "login:account:" + platform.Hash("absent-"+email)}
 	client.Del(ctx, keys...)
 	defer client.Del(ctx, keys...)
-	app := New(store, client, Config{PublicOrigin: "https://map.example", Secure: true})
+	app := New(store, client, Config{PublicOrigin: "https://map.example", AllowedOrigins: []string{"https://alternate.example"}, Secure: true})
 	request := func(username, password, origin string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		data, _ := json.Marshal(map[string]string{"username": username, "password": password})
 		r := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader(string(data)))
@@ -97,7 +97,7 @@ func TestPasswordLoginAndReset(t *testing.T) {
 	success := request("  "+strings.ToUpper(email)+"  ", password, "https://map.example", nil)
 	check(success, 200)
 	cookie := success.Result().Cookies()[0]
-	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode || cookie.MaxAge != 28800 {
+	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode || cookie.MaxAge != 28800 || cookie.Domain != "" {
 		t.Fatal("insecure session", cookie)
 	}
 	me := func(c *http.Cookie) *httptest.ResponseRecorder {
@@ -112,7 +112,7 @@ func TestPasswordLoginAndReset(t *testing.T) {
 	if err = json.Unmarshal(me(cookie).Body.Bytes(), &identity); err != nil || identity.Role != "owner" || identity.CSRF == "" {
 		t.Fatal(identity, err)
 	}
-	rotated := request(email, password, "https://map.example", cookie)
+	rotated := request(email, password, "https://alternate.example", cookie)
 	check(rotated, 200)
 	check(me(cookie), 401)
 	cookie = rotated.Result().Cookies()[0]

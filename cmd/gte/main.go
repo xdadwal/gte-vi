@@ -47,6 +47,14 @@ func main() {
 	defer r.Close()
 	secure := env("APP_ENV", "production") != "development"
 	c := httpapi.Config{Role: env("APP_ROLE", "all"), PublicOrigin: env("PUBLIC_ORIGIN", "http://127.0.0.1:5173"), Owner: owner, DevToken: os.Getenv("DEV_AUTH_TOKEN"), Secure: secure, TrustedProxyCIDRs: strings.FieldsFunc(os.Getenv("TRUSTED_PROXY_CIDRS"), func(r rune) bool { return r == ',' }), WebDir: env("WEB_DIR", "web/dist"), GraphDir: env("GRAPH_DIR", "artifacts/routing")}
+	for _, origin := range strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			c.AllowedOrigins = append(c.AllowedOrigins, origin)
+		}
+	}
+	if err := c.ValidateOrigins(); err != nil {
+		log.Fatal(err)
+	}
 	if !secure {
 		c.DevelopmentOrigins = strings.FieldsFunc(env("DEV_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:8080,http://localhost:8080"), func(r rune) bool { return r == ',' })
 		for i := range c.DevelopmentOrigins {
