@@ -4,7 +4,7 @@ Thanks for helping improve the map. Small, focused contributions are easiest to 
 
 ## Set up locally
 
-You’ll need Go 1.26 or later, Node.js 22 or later, and Docker with Docker Compose. CI currently uses Go 1.27.2 and Node.js 22; dependency versions are recorded in `go.mod` and `web/package-lock.json`.
+You’ll need Go 1.26 or later, Node.js 22 or later, Docker with Docker Compose, and Python 3 for the deployment helper tests. CI currently uses Go 1.27.2 and Node.js 22; dependency versions are recorded in `go.mod` and `web/package-lock.json`.
 
 From your checkout:
 
