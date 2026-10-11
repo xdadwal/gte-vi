@@ -166,7 +166,7 @@ export function MapView(props: Props) {
         import.meta.env.VITE_MAP_STYLE ||
         "https://tiles.openfreemap.org/styles/positron",
       center: [77.209, 28.6139],
-      zoom: 11.5,
+      zoom: import.meta.env.VITE_MOCK_DATA === "1" ? 13 : 11.5,
       attributionControl: false,
     });
     map.current = m;

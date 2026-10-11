@@ -389,7 +389,9 @@ export function PublicMap() {
         </a>
         <span className={`live-state ${fresh ? "healthy" : ""}`}>
           <i />
-          {displayState}
+          {import.meta.env.VITE_MOCK_DATA === "1"
+            ? "Mock hotspots"
+            : displayState}
         </span>
         <button
           className="icon-button"
@@ -693,11 +695,18 @@ export function PublicMap() {
           </div>
         )}
         <p className="panel-footer">
-          Community reports. Conditions can change.
+          {import.meta.env.VITE_MOCK_DATA === "1"
+            ? "Mock hotspots for testing. Star ratings are invented."
+            : "Community reports. Conditions can change."}
         </p>
       </section>
       <div className="map-caption">
-        DELHI / INDIA<span>Anonymous reports · 30-minute freshness</span>
+        DELHI / INDIA
+        <span>
+          {import.meta.env.VITE_MOCK_DATA === "1"
+            ? "Mock data · 30-minute expiry"
+            : "Anonymous reports · 30-minute freshness"}
+        </span>
       </div>
     </main>
   );
