@@ -4,8 +4,6 @@ An original, daylight-readable Delhi community map. Anonymous visitors report th
 
 This is a parody project, unaffiliated with Rockstar Games or the Grand Theft Auto franchise. Branding and interface assets are original. Community reports and mapped routes do not establish that an area or journey is safe.
 
-[Desktop preview](docs/screenshots/map-desktop.png) · [Mobile preview](docs/screenshots/map-mobile.png)
-
 ## Run locally
 
 Requires Go 1.26+, Node 22+, Docker Compose. Versions in CI and Docker are pinned; `go.mod` and `web/package-lock.json` are authoritative.
@@ -40,17 +38,7 @@ npm run dev --prefix web -- --host 0.0.0.0
 
 Open `http://192.168.1.2:5173` from the other device. Replace the example IP with your current address. Local-network HTTP supports browsing and the development console, but browser geolocation requires a trusted HTTPS origin on phones.
 
-For phone geolocation, create a local HTTPS certificate and trust its CA on the phone:
-
-```sh
-scripts/dev-cert.sh 192.168.1.2
-# Add https://192.168.1.2:8443 to DEV_ALLOWED_ORIGINS and restart the backend.
-DEV_TLS_CERT="$PWD/artifacts/tls/server.pem" DEV_TLS_KEY="$PWD/artifacts/tls/server.key" DEV_TLS_CA="$PWD/artifacts/tls/root.cer" npm run dev --prefix web -- --host 0.0.0.0 --port 8443
-```
-
-The secure map is `https://192.168.1.2:8443`. Download `/dev-ca.cer` from the HTTP preview (start it with `DEV_TLS_CA` set) to install the **GTE Local Development CA** on the test phone. Android: install it as a CA certificate in Encryption & credentials. iOS: install the profile, then enable full trust under General → About → Certificate Trust Settings. After trusting the CA, reload the HTTPS preview and use Report or the location button to request location access. Browser/app location permissions still apply.
-
-The CA lasts one year and server certificates last 30 days. Re-running the script preserves the CA and issues a certificate for the current LAN IP. Keys remain in ignored `artifacts/tls`; the Vite download route serves only the public CA certificate, only in development. Remove the test CA from your phone when finished. Simply bypassing a certificate warning does not establish a trusted HTTPS setup.
+For phone geolocation, serve the preview through a trusted HTTPS proxy or supply an existing certificate using `DEV_TLS_CERT` and `DEV_TLS_KEY`. Add the exact HTTPS origin to `DEV_ALLOWED_ORIGINS`. Certificate provisioning and device trust setup are local environment concerns; keys and certificates must stay outside Git.
 
 ## Prepare the walking graph
 
@@ -86,6 +74,6 @@ The browser tests require the local server/token above and create clearly labele
 
 Go HTTP API + PostgreSQL/PostGIS authoritative state + transactional outbox + Redis zone fanout and rate limits. React/MapLibre interface, client proximity checks, and replaceable browser routing worker. SSE takes a buffered authoritative snapshot, checks entity revisions including removal tombstones, falls back to polling, and closes on hidden tabs. Raw report coordinates are discarded after grid lookup.
 
-[Product decisions](PRODUCT.md), [design direction](DESIGN.md), [specification](docs/superpowers/specs/2026-10-11-gte-vi-design.md), [execution plan](docs/superpowers/plans/2026-10-11-initial-release.md), [third-party notices](THIRD_PARTY_NOTICES.md).
+[Product decisions](PRODUCT.md), [design direction](DESIGN.md), [architecture and behavior](docs/architecture.md), [third-party notices](THIRD_PARTY_NOTICES.md).
 
 The 100,000 concurrent-user goal requires deployed infrastructure measurements. Local checks do not establish production capacity or operational refuge availability.

@@ -1,6 +1,6 @@
-# Grant Theft Elections design specification
+# Grant Theft Elections architecture and behavior
 
-The approved conversation and the implementation plan are the product authority. PRODUCT.md and DESIGN.md capture the agreed design brief.
+PRODUCT.md and DESIGN.md capture the product and interface principles. This document records the implemented architecture and default behavior; operator-adjustable values are described in [runtime settings](operations/runtime-settings.md).
 
 ## Public map
 Delhi NCT only. Anonymous browser sessions. Fixed 250m square EPSG:32643 cells group reports and define public base geometry. Current GPS report fix <=30s old, accuracy <=100m. Exact coordinates discarded after grid lookup; never logged. One integer 1–5 rating/session/cell, replacement refreshes 30m expiry. 1–4 fresh sessions pending; >=5 active, latest 50 fresh session ratings determine average. Empty cells disappear; fresh reports start new episodes. Buffers: pending100m, active100m × unrounded average. Overlapping cells remain separate.

@@ -8,28 +8,7 @@ if (Boolean(cert) !== Boolean(key))
     "Set both DEV_TLS_CERT and DEV_TLS_KEY for the secure preview",
   );
 export default defineConfig({
-  plugins: [
-    react(),
-    {
-      name: "development-certificate-download",
-      apply: "serve",
-      configureServer(server) {
-        const ca = process.env.DEV_TLS_CA;
-        if (!ca) return;
-        const certificate = readFileSync(ca);
-        server.middlewares.use((req, res, next) => {
-          if (req.url !== "/dev-ca.cer") return next();
-          res.setHeader("Content-Type", "application/pkix-cert");
-          res.setHeader(
-            "Content-Disposition",
-            'attachment; filename="gte-development-ca.cer"',
-          );
-          res.setHeader("Cache-Control", "no-store");
-          res.end(certificate);
-        });
-      },
-    },
-  ],
+  plugins: [react()],
   server: {
     https:
       cert && key

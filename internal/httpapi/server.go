@@ -27,7 +27,6 @@ import (
 type Config struct {
 	PublicOrigin, Owner, Issuer, ClientID, ClientSecret, RedirectURL, DevToken, GraphDir, WebDir string
 	Secure                                                                                       bool
-	NetworkRateLimit                                                                             int
 	Role                                                                                         string
 	TrustedProxyCIDRs                                                                            []string
 	DevelopmentOrigins                                                                           []string
