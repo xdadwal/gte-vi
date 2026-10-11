@@ -186,7 +186,14 @@ func TestExpiredEpisodeStartsFreshBeforeWorker(t *testing.T) {
 		t.Fatal(e)
 	}
 	if len(snap["incidents"].([]json.RawMessage)) != 0 || len(snap["overview"].([]json.RawMessage)) != 1 {
-		t.Fatal("overview must be aggregate only", snap)
+		t.Fatal("overview must cover incidents outside the subscription", snap)
+	}
+	var area map[string]any
+	if e = json.Unmarshal(snap["overview"].([]json.RawMessage)[0], &area); e != nil {
+		t.Fatal(e)
+	}
+	if area["id"] != fresh["id"] || area["average"] != fresh["average"] || area["hotzone"] == nil {
+		t.Fatal("wide map must retain individual severity and footprint", area)
 	}
 }
 func TestSnapshotRejectsExpiredWorkerLease(t *testing.T) {

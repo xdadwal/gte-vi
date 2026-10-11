@@ -143,7 +143,7 @@ export function PublicMap() {
   useEffect(() => () => alertSound.current?.dispose(), []);
   const points = location.fix ? xy(location.fix.lon, location.fix.lat) : null;
   const viewCells = useMemo(() => cellsInBounds(...bounds), [bounds]);
-  const cells = useMemo(() => {
+  const { cells, overview } = useMemo(() => {
     const merged = new Set([
       ...(points
         ? cellsAround(
@@ -157,7 +157,10 @@ export function PublicMap() {
         : []),
       ...viewCells,
     ]);
-    return [...merged].slice(0, MAX_SUBSCRIPTION_CELLS).sort();
+    return {
+      cells: [...merged].slice(0, MAX_SUBSCRIPTION_CELLS).sort(),
+      overview: !viewCells.length || merged.size > MAX_SUBSCRIPTION_CELLS,
+    };
   }, [
     viewCells,
     points?.x && Math.floor(points.x / REPORT_CELL_METERS),
@@ -170,11 +173,23 @@ export function PublicMap() {
   ]);
   const { snapshot, state, fresh, refresh, refreshing, refreshError } = useLive(
     cells,
-    !viewCells.length,
+    overview,
   );
   const liveFresh = useRef(fresh);
   liveFresh.current = fresh;
   const incidents = snapshot.incidents;
+  // The local subscription remains authoritative for alerts and routing.
+  // Poll the remaining city incidents for display at wider zoom levels.
+  const mapIncidents = useMemo(() => {
+    if (!overview) return incidents;
+    const subscribed = new Set(cells);
+    return [
+      ...(snapshot.overview || []).filter(
+        (i) => !subscribed.has(i.cell) && Date.parse(i.expiresAt) > Date.now(),
+      ),
+      ...incidents,
+    ];
+  }, [overview, cells, snapshot.overview, incidents]);
   const eligible = useMemo(
     () => snapshot.refuges.filter((r) => refugeEligible(r, incidents, now)),
     [snapshot.refuges, incidents, Math.floor(now / 60000)],
@@ -487,7 +502,7 @@ export function PublicMap() {
   return (
     <main className="public-app" id="main-content" ref={appRoot}>
       <MapView
-        incidents={incidents}
+        incidents={mapIncidents}
         exitCoordinates={route ? initialExit(route) : undefined}
         refuges={eligible}
         fix={location.fix}
@@ -630,8 +645,8 @@ export function PublicMap() {
             </label>
             <p className="small-copy">
               {fresh
-                ? incidents.length
-                  ? `${incidents.length} reported areas on this map`
+                ? mapIncidents.length
+                  ? `${mapIncidents.length} reported areas on this map`
                   : "No current reports nearby"
                 : "Waiting for current map updates."}
             </p>
@@ -697,7 +712,7 @@ export function PublicMap() {
         {panel === "incident" && (
           <div className="incident-details">
             {selected.map((item) => {
-              const current = incidents.find((i) => i.id === item.id);
+              const current = mapIncidents.find((i) => i.id === item.id);
               return current ? (
                 <article key={current.id}>
                   <span className="eyebrow">

@@ -35,7 +35,7 @@ export function MapView(props: Props) {
     map = useRef<maplibregl.Map | null>(null),
     ready = useRef(false),
     latest = useRef(props),
-    following = useRef(false),
+    following = useRef(props.autoFollow ?? false),
     interacted = useRef(false),
     initialViewApplied = useRef(revision > 0),
     markers = useRef<maplibregl.Marker[]>([]);
@@ -310,10 +310,13 @@ export function MapView(props: Props) {
     m.on("zoom", refreshMarkers);
     m.on("moveend", bounds);
     m.on("movestart", (event) => {
-      if (event.originalEvent) interacted.current = true;
+      if (event.originalEvent) {
+        interacted.current = true;
+        following.current = false;
+      }
     });
     m.on("dragstart", () => {
-      if (!latest.current.autoFollow) following.current = false;
+      following.current = false;
     });
     m.on("click", "incident-fill", (e) => {
       const ids = new Set((e.features || []).map((f) => f.properties?.id));
@@ -369,7 +372,7 @@ export function MapView(props: Props) {
     }
   }, [props.locate]);
   useEffect(() => {
-    if ((props.autoFollow || following.current) && props.fix)
+    if (following.current && props.fix)
       map.current?.easeTo({
         center: [props.fix.lon, props.fix.lat],
         duration: 250,

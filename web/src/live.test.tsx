@@ -503,3 +503,94 @@ test("stale monitor does not start a second pull during manual refresh", async (
   });
   expect(result.current.snapshot.refuges[0].id).toBe("fresh");
 });
+
+test("local SSE snapshots preserve the wider map overview", async () => {
+  const overview = [
+    {
+      cell: "far",
+      revision: 1,
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    },
+  ];
+  vi.mocked(fetch).mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      incidents: [],
+      refuges: [],
+      overview,
+      serverTime: "now",
+    }),
+  } as Response);
+  const { result } = renderHook(() => useLive(["1431:6334"], true));
+  await waitFor(() =>
+    expect(result.current.snapshot.overview).toEqual(overview),
+  );
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [],
+      serverTime: "later",
+    }),
+  );
+  expect(result.current.snapshot.overview).toEqual(overview);
+});
+
+test("expired overview incidents disappear even when overview polling fails", async () => {
+  vi.useFakeTimers();
+  vi.mocked(fetch).mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      incidents: [],
+      refuges: [],
+      overview: [
+        {
+          cell: "far",
+          revision: 1,
+          expiresAt: new Date(Date.now() + 2000).toISOString(),
+        },
+      ],
+      serverTime: "now",
+    }),
+  } as Response);
+  const { result } = renderHook(() => useLive(["1431:6334"], true));
+  await act(async () => {});
+  expect(result.current.snapshot.overview).toHaveLength(1);
+  await act(async () => {
+    vi.advanceTimersByTime(3000);
+  });
+  expect(result.current.snapshot.overview).toEqual([]);
+});
+
+test("a delayed overview poll cannot replace a newer manual refresh", async () => {
+  let resolve!: (response: Response) => void;
+  const old = {
+    cell: "far",
+    revision: 1,
+    expiresAt: new Date(Date.now() + 60000).toISOString(),
+  };
+  const fresh = { ...old, revision: 2 };
+  vi.mocked(fetch).mockImplementation((url) =>
+    String(url).endsWith("snapshot?overview=true")
+      ? new Promise((r) => {
+          resolve = r;
+        })
+      : Promise.resolve({
+          ok: true,
+          json: async () => ({
+            incidents: [],
+            refuges: [],
+            overview: [fresh],
+            serverTime: "new",
+          }),
+        } as Response),
+  );
+  const { result } = renderHook(() => useLive(["1431:6334"], true));
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(result.current.snapshot.overview).toEqual([fresh]);
+  await act(async () => {
+    resolve({ ok: true, json: async () => ({ overview: [old] }) } as Response);
+  });
+  expect(result.current.snapshot.overview).toEqual([fresh]);
+});
