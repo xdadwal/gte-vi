@@ -84,6 +84,7 @@ docker compose exec db createdb -U gte gte_test
 Run the backend and frontend checks:
 
 ```sh
+python3 -m unittest discover -s deploy/gcp/tests -v
 TEST_DATABASE_URL='postgres://gte:local-only@127.0.0.1:55432/gte_test?sslmode=disable' \
 TEST_REDIS_URL='redis://127.0.0.1:56379' \
 go test -race ./...
