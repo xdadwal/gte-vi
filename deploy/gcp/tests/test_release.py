@@ -157,6 +157,37 @@ class RolloutOrderingTests(unittest.TestCase):
         self.assertEqual(cloud.objects['deploy/current.json']['previousWorkerImage'], 'old-image')
         self.assertTrue(cloud.group['versions'][0]['instanceTemplate'].endswith('/gte-release-ordering-test'))
 
+class CloudErrorTests(unittest.TestCase):
+    def test_denied_cloud_permission_is_visible_to_operator(self):
+        import http.server
+        import threading
+        import time
+        import urllib.error
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b'{"error":{"message":"Required compute.subnetworks.get permission"}}')
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            cloud = release.Cloud('demo')
+            cloud.token = 'fixture'
+            cloud.token_time = time.monotonic()
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                cloud.request(f'http://127.0.0.1:{server.server_port}/')
+            self.assertIn('compute.subnetworks.get', str(caught.exception))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
 
 if __name__ == '__main__':
     unittest.main()

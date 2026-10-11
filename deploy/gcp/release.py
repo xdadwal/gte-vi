@@ -58,9 +58,20 @@ class Cloud:
             'Authorization': 'Bearer ' + self.token,
             'Content-Type': 'application/json',
         })
-        with urllib.request.urlopen(request, timeout=60) as response:
-            payload = response.read()
-            return json.loads(payload) if payload else {}
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                payload = response.read()
+                return json.loads(payload) if payload else {}
+        except urllib.error.HTTPError as error:
+            # These Compute/Storage/Build API errors contain resource/permission
+            # diagnostics. Preserve the HTTP status for lock conflict handling.
+            try:
+                detail = json.loads(error.read(8192)).get('error', {}).get('message')
+                if isinstance(detail, str):
+                    error.msg = str(error.reason) + ': ' + detail[:1000]
+            except (ValueError, AttributeError):
+                pass
+            raise
 
     def compute(self, path, method='GET', body=None):
         return self.request(f'https://compute.googleapis.com/compute/v1/projects/{self.project}/{path}', method, body)

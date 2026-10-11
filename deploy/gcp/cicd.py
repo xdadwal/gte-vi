@@ -17,7 +17,8 @@ PERMISSIONS = [
     'compute.instances.get', 'compute.instances.list', 'compute.instances.setMetadata',
     'compute.projects.get', 'compute.zones.get', 'compute.zones.list',
     'compute.regionOperations.get', 'compute.globalOperations.get', 'compute.zoneOperations.get',
-    'compute.subnetworks.use', 'compute.networks.use',
+    'compute.subnetworks.use', 'compute.subnetworks.get',
+    'compute.networks.use', 'compute.networks.get',
     'compute.healthChecks.get', 'compute.healthChecks.useReadOnly',
 ]
 
