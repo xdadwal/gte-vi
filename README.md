@@ -1,81 +1,61 @@
 # Grand Theft Elections
 
-An original, daylight-readable Delhi community map. Anonymous visitors report their current 250 m area with 1–5 stars, see fresh reports, receive foreground proximity alerts, and preview walking routes to host-confirmed refuges. The private `/admin` console moderates contributions, manages refuges, records changes, and controls operator access.
+Know your surroundings. Share what you see.
 
-This is a parody project, unaffiliated with Rockstar Games or the Grand Theft Auto franchise. Branding and interface assets are original. Community reports and mapped routes do not establish that an area or journey is safe.
+**[Open the Delhi community map →](https://grandtheftelections.in)**
 
-## Run locally
+Grand Theft Elections is a community map for Delhi: see recent reports from people nearby, share a quick star rating for your area, and find walking directions to host-confirmed refuges. It works on desktop and mobile, with a light interface designed for daytime readability. You don’t need an account to use the map.
 
-Requires Go 1.26+, Node 22+, Docker Compose. Versions in CI and Docker are pinned; `go.mod` and `web/package-lock.json` are authoritative.
+![Desktop map of Delhi with alert-distance controls, Report and Find refuge buttons.](docs/images/desktop-map.png)
 
-```sh
-cp .env.example .env
-# Set DEV_AUTH_TOKEN to a local secret in .env.
-docker compose up -d --wait
-npm ci --prefix web
-set -a
-. ./.env
-set +a
-go run ./cmd/gte
-# In another terminal:
-npm run dev --prefix web
-```
+*The desktop map, captured from the live app. An area without reports is not necessarily safe.*
 
-Open <http://127.0.0.1:5173> or <http://127.0.0.1:5173/admin>. The console exposes local-token sign-in only in development. The default database contains **no refuges**. Browser geolocation requires localhost or HTTPS; reporting defaults to a fix within 30 seconds and 100 m accuracy.
+## What you can do
 
-Owners can adjust report, alert, walking, location, map and update settings through **Settings** in `/admin`; other operators can view them. Changes are validated, revisioned and audited with a reason, and reach open clients through SSE or polling without a deployment. Restore defaults fills a draft for review before saving. Shorter expiry caps live reports; longer expiry applies to future submissions and never revives expired reports. See [runtime settings](docs/operations/runtime-settings.md) for details.
+- **Report your area:** choose 1–5 stars, read the short description, then hold to submit (3 seconds by default). Reports are grouped into 250 m areas rather than publishing your exact reporting location.
+- **See nearby activity:** coloured gradient hotspots show grouped community reports. Reports expire, so old activity does not stay on the map indefinitely.
+- **Choose your alert distance:** the default range is 500 m–3 km in 500 m steps. Alerts work while the map is open in the foreground; optional sound can be stopped with **Ack**.
+- **Find a refuge:** preview walking directions to an eligible, host-confirmed location when one is available. Routes are calculated in your browser using OpenStreetMap data.
 
-Development also accepts `http://localhost:5173` and the built app at `http://127.0.0.1:8080` or `http://localhost:8080`. If you change preview ports, set `PUBLIC_ORIGIN` to the browser's exact origin or configure the comma-separated `DEV_ALLOWED_ORIGINS`. Production accepts only `PUBLIC_ORIGIN` and ignores development origins.
+### Reporting on mobile
 
-For devices on the same Wi-Fi, use the laptop's LAN IPv4 address (for example `192.168.1.2`) and restart both development servers:
+<img src="docs/images/mobile-report.png" alt="Mobile report picker with three stars selected, the description Detention ongoing, and a Hold 3s to report button." width="390">
 
-```sh
-# Backend terminal, after loading .env:
-LISTEN_ADDR=0.0.0.0:8080 DEV_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:8080,http://localhost:8080,http://192.168.1.2:5173,http://192.168.1.2:8080" go run ./cmd/gte
-# Frontend terminal:
-npm run dev --prefix web -- --host 0.0.0.0
-```
+*The report picker with three stars selected. This screenshot uses a simulated Delhi location; no report was submitted.*
 
-Open `http://192.168.1.2:5173` from the other device. Replace the example IP with your current address. Local-network HTTP supports browsing and the development console, but browser geolocation requires a trusted HTTPS origin on phones.
+The star descriptions keep reporting quick and consistent:
 
-For phone geolocation, serve the preview through a trusted HTTPS proxy or supply an existing certificate using `DEV_TLS_CERT` and `DEV_TLS_KEY`. Add the exact HTTPS origin to `DEV_ALLOWED_ORIGINS`. Certificate provisioning and device trust setup are local environment concerns; keys and certificates must stay outside Git.
+| Stars | Meaning |
+| --- | --- |
+| 1 | Checkposts with fewer than 5 personnel |
+| 2 | Active personnel |
+| 3 | Detention ongoing |
+| 4 | Manhandling and higher personnel count |
+| 5 | Full-blown violence |
 
-## Prepare the walking graph
+Allow location access when reporting or finding a route. Phone browsers require a trusted HTTPS connection for location access. There are no background notifications or a public map of individual participants.
 
-Download an OpenStreetMap PBF from [Geofabrik Northern Zone](https://download.geofabrik.de/asia/india/northern-zone.html), then:
+## Behind the map
 
-```sh
-go run ./cmd/graphbuild -source /path/to/northern-zone.osm.pbf -out artifacts/routing
-```
+The private operator console supports incident moderation, refuge management, team access and an audit trail. Owners can adjust report freshness, alerts and other [runtime settings](docs/operations/runtime-settings.md) without redeploying. Operators access `/admin` directly and sign in with an email as their username and a password.
 
-The importer clips to Delhi, excludes mapped access restrictions, conditional access, blocked barriers, and foot-only one-way ways conservatively. It writes a content-versioned manifest and immutable 500 m routing tiles, independent of the 250 m reporting grid. Routing stays in a browser worker and includes the initial exit segment in its 3 km limit. Missing graph data produces an explicit error. A download is not bundled into Git or the application image.
+The application combines a Go API, PostgreSQL/PostGIS and Redis with a React/MapLibre frontend. Live zone updates use server-sent events with polling fallback; proximity checks and walking-route computation stay in the browser. The target is 100,000 concurrent users, but that capacity has **not been validated** with production load tests.
 
-Retain every version referenced by a deployed manifest. Publish tiles before atomically switching the manifest; serve them through a CDN with compression. See [operations](docs/operations/runbook.md) and [measured scope](docs/operations/verification.md).
+## Run it or contribute
 
-For the initial GCP infrastructure and production setup, see [GCP deployment](docs/operations/gcp.md).
+Contributions are welcome: bug fixes, accessibility improvements, documentation and carefully scoped features all help. Start with [CONTRIBUTOR.md](CONTRIBUTOR.md) for local setup, tests and pull-request guidance. The local map works without importing a walking graph; route previews require that additional setup.
 
-## Verify
+For more context:
 
-Integration tests clear a dedicated database whose name must end in `_test`:
+- [Product decisions](PRODUCT.md) and [design direction](DESIGN.md)
+- [Architecture and behaviour](docs/architecture.md)
+- [Operations runbook](docs/operations/runbook.md) and [GCP deployment](docs/operations/gcp.md)
+- [Verification scope and measured results](docs/operations/verification.md)
 
-```sh
-docker compose exec db createdb -U gte gte_test
-TEST_DATABASE_URL='postgres://gte:local-only@127.0.0.1:55432/gte_test?sslmode=disable' go test -race ./...
-go vet ./...
-npm test --prefix web
-npm run build --prefix web
-cd web
-npx playwright install chromium
-npm run e2e -- e2e/map.spec.ts
-# Requires the real graph: E2E_ROUTING=1 npm run e2e
-```
+## Project and data notices
 
-The browser tests require the local server/token above and create clearly labeled development-only refuge fixtures. Routing benchmark endpoints are synthetic and never published as refuges.
+This is an independent parody project, unaffiliated with or endorsed by Rockstar Games or the Grand Theft Auto franchise. Its branding and interface assets are original; no game artwork or media is bundled.
 
-## Architecture and product decisions
+Community reports, host confirmations and mapped routes do not guarantee safety. Conditions can change, and a lack of reports does not verify an area or journey.
 
-Go HTTP API + PostgreSQL/PostGIS authoritative state + transactional outbox + Redis zone fanout and rate limits. React/MapLibre interface, client proximity checks, and replaceable browser routing worker. SSE takes a buffered authoritative snapshot, checks entity revisions including removal tombstones, falls back to polling, and closes on hidden tabs. Raw report coordinates are discarded after grid lookup.
-
-[Product decisions](PRODUCT.md), [design direction](DESIGN.md), [architecture and behavior](docs/architecture.md), [third-party notices](THIRD_PARTY_NOTICES.md).
-
-The 100,000 concurrent-user goal requires deployed infrastructure measurements. Local checks do not establish production capacity or operational refuge availability.
+The code is [MIT licensed](LICENSE). Map and other third-party data have their own licences and attribution requirements; see [third-party notices](THIRD_PARTY_NOTICES.md). Screenshot basemaps use OpenFreeMap and © OpenStreetMap contributors.
