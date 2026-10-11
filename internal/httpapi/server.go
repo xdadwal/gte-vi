@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +29,7 @@ type Config struct {
 	Role                                            string
 	TrustedProxyCIDRs                               []string
 	DevelopmentOrigins                              []string
+	AllowedOrigins                                  []string
 }
 type App struct {
 	loginSlots  chan struct{}
@@ -179,7 +179,7 @@ func (a *App) Handler() http.Handler {
 		}
 		if r.Method != "GET" && r.Method != "HEAD" {
 			origin := r.Header.Get("Origin")
-			if origin != "" && origin != a.Config.PublicOrigin && (a.Config.Secure || !slices.Contains(a.Config.DevelopmentOrigins, origin)) {
+			if origin != "" && !a.allowedOrigin(origin) {
 				fail(w, 403, "request origin rejected")
 				return
 			}

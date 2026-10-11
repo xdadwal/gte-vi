@@ -76,6 +76,10 @@ if sys.argv[1] not in ('gateway', 'worker'):
     raise SystemExit('Invalid VM application role')
 lb_ip = str(ipaddress.IPv4Address(c['LB_IP']))
 e = {k: c[k] for k in required if k not in ('SQL_CONNECTION_NAME', 'GRAPH_BUCKET', 'LB_IP')}
+if 'ALLOWED_ORIGINS' in c:
+    if not isinstance(c['ALLOWED_ORIGINS'], str):
+        raise SystemExit('ALLOWED_ORIGINS must be a comma-separated string')
+    e['ALLOWED_ORIGINS'] = c['ALLOWED_ORIGINS']
 e.update(APP_ENV='production', APP_ROLE=sys.argv[1], LISTEN_ADDR='127.0.0.1:8081', WEB_DIR='/app/web', GRAPH_DIR='/app/routing', TRUSTED_PROXY_CIDRS='127.0.0.1/32')
 e['DATABASE_URL'] = (base / 'database-url').read_text().strip() + '&pool_max_conns=' + ('5' if sys.argv[1] == 'worker' else '10')
 e['REDIS_URL'] = (base / 'redis-url').read_text().strip()
