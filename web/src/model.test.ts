@@ -1,6 +1,12 @@
 import { it, expect } from "vitest";
 import {
   alertFor,
+  cellsAround,
+  cellsInBounds,
+  ll,
+  zone,
+  REPORT_CELL_METERS,
+  MAX_SUBSCRIPTION_CELLS,
   isOpen,
   openThrough,
   xy,
@@ -9,8 +15,8 @@ import {
 } from "./model";
 it("matches published metric-grid fixtures", () => {
   const p = xy(77.209, 28.6139);
-  expect(Math.floor(p.x / 500)).toBe(1431);
-  expect(Math.floor(p.y / 500)).toBe(6334);
+  expect(Math.floor(p.x / REPORT_CELL_METERS)).toBe(2863);
+  expect(Math.floor(p.y / REPORT_CELL_METERS)).toBe(12668);
 });
 it("escalation waits five minutes and rechecks after cooldown", () => {
   const i = {
@@ -86,4 +92,43 @@ it("an exact one-star decimal escalation is not lost to floating point rounding"
     alertFor(i, p, 500, 301000, { last: 1000, severity: 3.1, inside: true })
       .notify,
   ).toBe(true);
+});
+
+it("splits an old 500 m area into four independent 250 m report cells", () => {
+  const base = { id: "", x: 1000, y: 2000 };
+  expect(cellsAround({ ...base, x: base.x + 249, y: base.y + 249 }, 0)).toEqual(
+    ["4:8"],
+  );
+  expect(cellsAround({ ...base, x: base.x + 250, y: base.y + 249 }, 0)).toEqual(
+    ["5:8"],
+  );
+  expect(cellsAround({ ...base, x: base.x + 249, y: base.y + 250 }, 0)).toEqual(
+    ["4:9"],
+  );
+  expect(cellsAround({ ...base, x: base.x + 250, y: base.y + 250 }, 0)).toEqual(
+    ["5:9"],
+  );
+  expect(zone({ cell: "4:8", buffer: 300 } as Incident)).toEqual({
+    x: 1000,
+    y: 2000,
+    width: 250,
+    height: 250,
+    buffer: 300,
+  });
+});
+it("covers the largest configurable alert or walking radius plus severity buffer", () => {
+  const cells = cellsAround(xy(77.209, 28.6139), 5000 + 5 * 500);
+  expect(cells).toHaveLength(61 * 61);
+  expect(cells.length).toBeLessThanOrEqual(MAX_SUBSCRIPTION_CELLS);
+  expect(new Set(cells).size).toBe(cells.length);
+});
+it("maps small viewport bounds onto the reporting grid", () => {
+  const westSouth = ll(715800, 3167100),
+    eastNorth = ll(715900, 3167200);
+  expect(cellsInBounds(...westSouth, ...eastNorth)).toEqual(["2863:12668"]);
+});
+it("can address routing tiles independently of report-cell dimensions", () => {
+  const point = xy(77.209, 28.6139);
+  expect(cellsAround(point, 0, 500)).toEqual(["1431:6334"]);
+  expect(cellsAround(point, 0)).toEqual(["2863:12668"]);
 });

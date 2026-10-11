@@ -30,4 +30,4 @@ PostgreSQL holds the authoritative singleton `{revision, values}`. Backend repli
 
 Changing report policy during high traffic may briefly serialize writes while zones are recalculated. Tune polling and heartbeat intervals conservatively: shorter intervals increase traffic at large client counts. Proxy idle timeouts must remain greater than the configured heartbeat; changing an application setting does not reconfigure the proxy.
 
-The 500 m grid, metric projection, Delhi boundary, walking graph structure, credentials, OIDC, database/Redis addresses, origins and proxy trust remain deployment configuration. Report star choices stay 1–5. This page does not seed mock data or introduce official severity overrides.
+The 250 m reporting grid, metric projection, Delhi boundary, walking graph structure, credentials, OIDC, database/Redis addresses, origins and proxy trust remain deployment configuration. Report star choices stay 1–5. This page does not seed mock data or introduce official severity overrides.

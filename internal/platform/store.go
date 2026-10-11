@@ -76,7 +76,7 @@ func (s *Store) Migrate(ctx context.Context, owner string) error {
 func (s *Store) Cell(ctx context.Context, lon, lat float64) (string, int, int, error) {
 	var x, y int
 	var inside bool
-	e := s.DB.QueryRow(ctx, `WITH p AS(SELECT ST_SetSRID(ST_Point($1,$2),4326) geom) SELECT ST_Covers(b.geom,p.geom),floor(ST_X(ST_Transform(p.geom,32643))/500)::int,floor(ST_Y(ST_Transform(p.geom,32643))/500)::int FROM p,boundary b WHERE b.id='delhi'`, lon, lat).Scan(&inside, &x, &y)
+	e := s.DB.QueryRow(ctx, `WITH p AS(SELECT ST_SetSRID(ST_Point($1,$2),4326) geom) SELECT ST_Covers(b.geom,p.geom),floor(ST_X(ST_Transform(p.geom,32643))/250)::int,floor(ST_Y(ST_Transform(p.geom,32643))/250)::int FROM p,boundary b WHERE b.id='delhi'`, lon, lat).Scan(&inside, &x, &y)
 	if e != nil {
 		return "", 0, 0, e
 	}
@@ -257,7 +257,7 @@ func (s *Store) Snapshot(ctx context.Context, cells []string, overview bool) (ma
 	}
 	overviewItems := []json.RawMessage{}
 	if overview {
-		rows, e = tx.Query(ctx, `SELECT json_build_object('lon',ST_X(p),'lat',ST_Y(p),'count',n) FROM (SELECT ST_Transform(ST_SetSRID(ST_MakePoint((floor(x/4.0)+0.5)*2000,(floor(y/4.0)+0.5)*2000),32643),4326) p,count(*) n FROM incidents WHERE status<>'empty' GROUP BY floor(x/4.0),floor(y/4.0)) clusters`)
+		rows, e = tx.Query(ctx, `SELECT json_build_object('lon',ST_X(p),'lat',ST_Y(p),'count',n) FROM (SELECT ST_Transform(ST_SetSRID(ST_MakePoint((floor(x/8.0)+0.5)*2000,(floor(y/8.0)+0.5)*2000),32643),4326) p,count(*) n FROM incidents WHERE status<>'empty' GROUP BY floor(x/8.0),floor(y/8.0)) clusters`)
 		if e != nil {
 			return nil, e
 		}

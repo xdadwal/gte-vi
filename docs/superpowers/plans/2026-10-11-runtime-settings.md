@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Preserve existing defaults, fixed 500 m grid, projection and Delhi boundary.
+- Preserve existing defaults, fixed 250 m reporting grid, projection and Delhi boundary.
 - No secrets, infrastructure controls, mock-data labeling or public admin link.
 - Expected revision, owner role, CSRF and reason required for writes.
 - Expired reports never revived; shorter expiry caps live reports, longer expiry applies to future reports.

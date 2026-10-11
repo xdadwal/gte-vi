@@ -6,7 +6,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import type { Incident, Refuge, Fix, Overview } from "./model";
-import { ll } from "./model";
+import { ll, REPORT_CELL_METERS } from "./model";
 import { useSettings } from "./settings";
 import { hotspotFeatures, severityColor, severityExpression } from "./hotspots";
 type Props = {
@@ -153,7 +153,12 @@ export function MapView(props: Props) {
       button.onclick = () => latest.current.onSelect?.([i]);
       markers.current.push(
         new maplibregl.Marker({ element: button })
-          .setLngLat(ll(x * 500 + 250, y * 500 + 250))
+          .setLngLat(
+            ll(
+              x * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
+              y * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
+            ),
+          )
           .addTo(m),
       );
     }
@@ -366,7 +371,10 @@ export function MapView(props: Props) {
     if (props.selected) {
       const [x, y] = props.selected.cell.split(":").map(Number);
       map.current?.easeTo({
-        center: ll(x * 500 + 250, y * 500 + 250),
+        center: ll(
+          x * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
+          y * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
+        ),
         zoom: 14,
       });
     }

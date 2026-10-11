@@ -1,22 +1,22 @@
 import { test, expect } from "@playwright/test";
-import { ll, xy } from "../src/model";
+import { ll, xy, REPORT_CELL_METERS } from "../src/model";
 import type { Incident } from "../src/model";
 
 test("severity hotspots retain star labels and pending state across viewports", async ({
   page,
 }) => {
   const point = xy(77.209, 28.6139);
-  const originX = Math.floor(point.x / 500),
-    originY = Math.floor(point.y / 500);
+  const originX = Math.floor(point.x / REPORT_CELL_METERS),
+    originY = Math.floor(point.y / REPORT_CELL_METERS);
   const incidents: Incident[] = [1, 2, 3, 4, 5, 0].map((stars, index) => {
     const x = originX + (index % 3) * 2,
       y = originY + Math.floor(index / 3) * 2;
     const buffer = stars === 0 ? 100 : stars * 100;
     const ring = [
-      [(x + 1) * 500, y * 500, -Math.PI / 2],
-      [(x + 1) * 500, (y + 1) * 500, 0],
-      [x * 500, (y + 1) * 500, Math.PI / 2],
-      [x * 500, y * 500, Math.PI],
+      [(x + 1) * REPORT_CELL_METERS, y * REPORT_CELL_METERS, -Math.PI / 2],
+      [(x + 1) * REPORT_CELL_METERS, (y + 1) * REPORT_CELL_METERS, 0],
+      [x * REPORT_CELL_METERS, (y + 1) * REPORT_CELL_METERS, Math.PI / 2],
+      [x * REPORT_CELL_METERS, y * REPORT_CELL_METERS, Math.PI],
     ].flatMap(([a, b, start]) =>
       Array.from({ length: 9 }, (_, step) => {
         const angle = start + (step * Math.PI) / 16;
@@ -64,13 +64,15 @@ test("severity hotspots retain star labels and pending state across viewports", 
       errors.push(message.text());
   });
   await page.goto("/");
+  // Markers are installed after MapLibre loads the external style, sprites,
+  // tiles and glyphs. Allow a cold network/browser context to finish loading.
   for (const stars of [1, 2, 3, 4, 5])
     await expect(
       page.getByRole("button", {
         name: `Incident ${stars.toFixed(1)} stars, 5 reports`,
         exact: true,
       }),
-    ).toBeAttached();
+    ).toBeAttached({ timeout: 15000 });
   await expect(
     page.getByRole("button", { name: "Pending incident, 2 reports" }),
   ).toBeAttached();

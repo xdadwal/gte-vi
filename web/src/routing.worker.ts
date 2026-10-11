@@ -25,10 +25,13 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     if (!response.ok) throw new Error("Walking-network data is not available.");
     const manifest = (await response.json()) as {
       version: string;
+      cellSize: number;
       tiles: Record<string, string>;
     };
+    if (!Number.isFinite(manifest.cellSize) || manifest.cellSize <= 0)
+      throw new Error("Walking-network tile dimensions are unavailable.");
     const origin = xy(request.origin.lon, request.origin.lat),
-      cells = cellsAround(origin, max + 100),
+      cells = cellsAround(origin, max + 100, manifest.cellSize),
       nodes = new Map<string, Node>(),
       edges = new Map<string, Graph["edges"][number]>();
     let index = 0;

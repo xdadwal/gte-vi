@@ -18,6 +18,8 @@ Route `/api/v1/events` to gateways, other API traffic to API replicas, and stati
 
 Terminate TLS at a trusted proxy. Preserve same-origin cookies and Origin. Disable SSE buffering and compression; permit idle streams beyond the configured heartbeat (default 15 seconds). Set per-process open-file limits to at least 65536 and independently budget gateway replicas and database pool connections. Go's request-header timeout is 5 seconds and stream writes time out after 10 seconds to shed slow receivers. Zone queues are bounded; overflow requires a fresh snapshot.
 
+Allow request lines of at least 64 KB for bounded cell-list subscriptions (up to 4,096 cells). For nginx, set `large_client_header_buffers 4 64k` in the `http` or `server` context; the default request-line limit is too small. Apply the same allowance at any upstream CDN or gateway.
+
 Example proxy settings for the SSE location:
 
 ```nginx
@@ -49,11 +51,11 @@ Approve verified operator emails in Team access. All approved operators can mode
 
 Create draft refuges at the actual pedestrian entrance. Record host contact, confirmation date/notes privately, public access instructions, opening intervals, and Delhi-time date exceptions. Review the public preview before publishing. Archive withdrawn permission. Temporary closure requires manual reopening. No automatic incident overrides or official stars exist.
 
-Incidents display the latest 100 fresh contributions; the count covers all fresh sessions and the the configured rating window (default latest 50) determines severity. Removal previews show the resulting total and severity. Hide suppresses all existing contributions with an audit reason; a later submission creates a new pending episode. Conflicts require reselecting against the current revision. Activity lists the latest 500 changes, including before/after state; durable audit remains in PostgreSQL.
+Incidents display the latest 100 fresh contributions; the count covers all fresh sessions and the configured rating window (default latest 50) determines severity. Removal previews show the resulting total and severity. Hide suppresses all existing contributions with an audit reason; a later submission creates a new pending episode. Conflicts require reselecting against the current revision. Activity lists the latest 500 changes, including before/after state; durable audit remains in PostgreSQL.
 
 ## Data and backups
 
-No raw GPS coordinates from reports are persisted. Only the resulting 500 m cell is stored. Browser cooldown/location state stays on the device; public responses omit session identifiers, host contact, and confirmation notes. Application logs do not record request bodies or cookies; apply that same restriction to proxies/APM. Refuges' public entrance coordinates and OSM graph nodes are intentional public map data.
+No raw GPS coordinates from reports are persisted. Only the resulting 250 m cell is stored. Browser cooldown/location state stays on the device; public responses omit session identifiers, host contact, and confirmation notes. Application logs do not record request bodies or cookies; apply that same restriction to proxies/APM. Refuges' public entrance coordinates and OSM graph nodes are intentional public map data.
 
 Expired report contributions and published outbox rows are removed after an hour; receipts expire after an hour, anonymous sessions after 30 days, admin sessions after 8 hours, and login flows after 5 minutes. Expiry cleanup removes expired session rows only after their referenced reports/receipts are gone. Audit is retained. Back up PostgreSQL with access controls and an explicit retention policy; apply restricted access to host details and operator email records.
 
@@ -72,3 +74,9 @@ go run ./cmd/loadtest -url http://isolated-development-server:8080 -mode write -
 ```
 
 Run concentrated and distributed workloads, reconnect bursts, polling fallback, Redis/worker failure, and expiry transitions together on the intended deployment. Validate p95 publication visibility and writes, one-hour stability, and a physical 4 GB Android browser before increasing exposure. Synthetic fixtures must never be used as genuine reports or published refuges.
+
+### Reporting grid migration
+
+Reporting cells are now 250 m squares in EPSG:32643. The walking graph keeps its independent 500 m tile grid; no graph rebuild is required. Alert-radius preferences and severity buffers retain their configured values. Detailed subscriptions allow up to 4,096 cells so the largest supported alert/walking radius plus hotzone buffer fits the smaller grid.
+
+Back up PostgreSQL and stop old application instances before deploying this grid change. Schema version 2 archives the original 500 m incidents and their contributions in `reporting_grid_archive`, suppresses those contributions, retires the old cells, and publishes removal events. Exact original report locations were discarded, so legacy contributions cannot be assigned reliably to a 250 m subcell. New submissions use the new grid. Deploy the matching frontend and reload existing browser tabs; do not run mixed grid versions. The archive remains private database history and survives normal expired-report cleanup.

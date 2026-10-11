@@ -1,7 +1,7 @@
 import type { ExpressionSpecification } from "maplibre-gl";
 import type * as GeoJSON from "geojson";
 import type { Incident } from "./model";
-import { ll } from "./model";
+import { ll, REPORT_CELL_METERS } from "./model";
 
 // Warm severity scale keeps refuges teal and walking routes blue.
 export const STAR_COLORS = [
@@ -32,7 +32,10 @@ export function hotspotFeatures(
     type: "FeatureCollection",
     features: incidents.flatMap((incident) => {
       const [x, y] = incident.cell.split(":").map(Number);
-      const center = ll(x * 500 + 250, y * 500 + 250);
+      const center = ll(
+        x * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
+        y * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
+      );
       // Nested translucent contours approximate a soft gradient on the actual
       // zone footprint. No density weighting or invented larger danger radius.
       return Array.from({ length: 16 }, (_, index): GeoJSON.Feature => {

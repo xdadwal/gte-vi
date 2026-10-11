@@ -17,6 +17,8 @@ import { api } from "./api";
 import { randomId } from "./id";
 import {
   alertFor,
+  REPORT_CELL_METERS,
+  MAX_SUBSCRIPTION_CELLS,
   cellsInBounds,
   cellsAround,
   xy,
@@ -108,11 +110,11 @@ export function PublicMap() {
         : []),
       ...viewCells,
     ]);
-    return [...merged].slice(0, 1024).sort();
+    return [...merged].slice(0, MAX_SUBSCRIPTION_CELLS).sort();
   }, [
     viewCells,
-    points?.x && Math.floor(points.x / 500),
-    points?.y && Math.floor(points.y / 500),
+    points?.x && Math.floor(points.x / REPORT_CELL_METERS),
+    points?.y && Math.floor(points.y / REPORT_CELL_METERS),
     radius,
     config.alertRadiusMaxMeters,
     config.walkingMaxMeters,
@@ -342,8 +344,10 @@ export function PublicMap() {
       const original = xy(request.current.body.lon, request.current.body.lat),
         current = xy(currentFix.lon, currentFix.lat);
       if (
-        Math.floor(original.x / 500) === Math.floor(current.x / 500) &&
-        Math.floor(original.y / 500) === Math.floor(current.y / 500)
+        Math.floor(original.x / REPORT_CELL_METERS) ===
+          Math.floor(current.x / REPORT_CELL_METERS) &&
+        Math.floor(original.y / REPORT_CELL_METERS) ===
+          Math.floor(current.y / REPORT_CELL_METERS)
       )
         request.current.body = {
           ...currentFix,

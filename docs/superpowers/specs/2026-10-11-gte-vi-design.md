@@ -3,14 +3,14 @@
 The approved conversation and the implementation plan are the product authority. PRODUCT.md and DESIGN.md capture the agreed design brief.
 
 ## Public map
-Delhi NCT only. Anonymous browser sessions. Fixed 500m square EPSG:32643 cells group reports and define public base geometry. Current GPS report fix <=30s old, accuracy <=100m. Exact coordinates discarded after grid lookup; never logged. One integer 1–5 rating/session/cell, replacement refreshes 30m expiry. 1–4 fresh sessions pending; >=5 active, latest 50 fresh session ratings determine average. Empty cells disappear; fresh reports start new episodes. Buffers: pending100m, active100m × unrounded average. Overlapping cells remain separate.
+Delhi NCT only. Anonymous browser sessions. Fixed 250m square EPSG:32643 cells group reports and define public base geometry. Current GPS report fix <=30s old, accuracy <=100m. Exact coordinates discarded after grid lookup; never logged. One integer 1–5 rating/session/cell, replacement refreshes 30m expiry. 1–4 fresh sessions pending; >=5 active, latest 50 fresh session ratings determine average. Empty cells disappear; fresh reports start new episodes. Buffers: pending100m, active100m × unrounded average. Overlapping cells remain separate.
 
 Alert radius500–3000m/500m, default1000m, measured from hotzone edge. Foreground only. First entry/activation and >=1-star escalation; 5m cooldown, 60s outside rearm. In-app banners, sound optional/off by default, no focus stealing. No-current-reports copy never implies safety.
 
 Report → choose1–5 stars → hold3s, no descriptions/preselection/confirmation. Release/drag-away/blur cancels. Idempotent submit, server acknowledgement before success, retry preserves stars. Browsing without location; Locate/Report/Find refuge asks permission.
 
 ## Live state
-Zone-based single SSE connection/tab and snapshots. Client proximity and cooldowns. Snapshot-buffer handoff, revisions, removes, heartbeat15s, stale45s. Poll10s+jitter, reconnect backoff, refresh on zones/resume. Detailed subscriptions max1024cells, overview aggregates. Hidden tab closes stream. Redis failure forces resnapshot; transactional database outbox preserves reports.
+Zone-based single SSE connection/tab and snapshots. Client proximity and cooldowns. Snapshot-buffer handoff, revisions, removes, heartbeat15s, stale45s. Poll10s+jitter, reconnect backoff, refresh on zones/resume. Detailed subscriptions max4096cells, overview aggregates. Hidden tab closes stream. Redis failure forces resnapshot; transactional database outbox preserves reports.
 
 ## Routing/refuges
 Browser worker, replaceable engine, versioned immutable OSM pedestrian graph tiles. Complete local3km coverage, no server fallback. Whole-edge checks, access/barriers, max3km including exit. Minimize distance inside initial overlapping hotzone union then total length, no reentry. No eligible route and missing-data failures differ. Current revisions validate results. Route line, live position, estimated time4km/h, no maneuver guidance. Affected/off-route warns and offers manual reroute.

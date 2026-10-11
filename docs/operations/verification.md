@@ -14,7 +14,11 @@ These are local engineering measurements, not a production-capacity promise. Hos
 
 Runtime settings verification: Go race tests and vet passed with dedicated PostGIS/Redis test services. New coverage includes bounded settings validation, owner/read-only authorization, CSRF, revocation, optimistic conflicts, audit records, expiry caps without resurrection, concurrent report admission/save coordination and changed Redis cooldowns. All 30 frontend tests passed. Six browser journeys passed locally, including the real walking graph and owner settings propagation to open SSE/polling maps, preserved personal radius, new visitor defaults and stale-save rejection. The mobile settings overflow regression passed separately after the navigation fix. Desktop and mobile HTTPS settings views were checked for overflow and serious/critical axe violations. Settings defaults were compared across Go and TypeScript. This does not extend the capacity measurements below; no new load benchmark was run.
 
-## Local load measurements
+## 250 m reporting grid
+
+Go race tests and vet passed with dedicated PostGIS/Redis services; all 36 frontend tests and the production build passed. Tests cover adjacent 250 m subcells, measured 250 x 250 m public geometry, preserved legacy archives through expiry cleanup, idempotent migration, original and orphaned receipt invalidation, maximum-radius subscription coverage, and routing tile lookup independent of the reporting grid. The local database migration archived nine legacy incidents and two retained contributions. A 4,096-cell encoded snapshot request (61,481-byte URL) returned HTTP 200. All six HTTPS browser journeys passed, including hotspot star labels, mobile reporting, responsive/accessibility checks, real walking routes, and live settings propagation. The hotspot assertion now allows 15 seconds for cold external basemap readiness; the initial 5-second limit timed out before successful glyph requests completed. Independent review found a legacy receipt gap; the fix and scoped re-review passed. No capacity load test was rerun for the smaller grid.
+
+## Local load measurements (original 500 m reporting grid)
 
 | Workload | Measured scope | Result |
 | --- | --- | --- |

@@ -87,8 +87,8 @@ func parseCells(s string) ([]string, error) {
 		return []string{}, nil
 	}
 	parts := strings.Split(s, ",")
-	if len(parts) > 1024 {
-		return nil, errors.New("maximum1024 cells")
+	if len(parts) > 4096 {
+		return nil, errors.New("maximum 4096 cells")
 	}
 	out := []string{}
 	seen := map[string]bool{}
@@ -98,11 +98,11 @@ func parseCells(s string) ([]string, error) {
 			return nil, errors.New("invalid cell")
 		}
 		x, e := strconv.Atoi(xy[0])
-		if e != nil || x < 0 || x > 4000 {
+		if e != nil || x < 0 || x > 8000 {
 			return nil, errors.New("invalid cell")
 		}
 		y, e := strconv.Atoi(xy[1])
-		if e != nil || y < 0 || y > 20000 {
+		if e != nil || y < 0 || y > 40000 {
 			return nil, errors.New("invalid cell")
 		}
 		canonical := fmt.Sprintf("%d:%d", x, y)
@@ -545,7 +545,7 @@ func (a *App) receive(ctx context.Context) {
 func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	cells, e := parseCells(r.URL.Query().Get("cells"))
 	if e != nil || len(cells) == 0 {
-		fail(w, 400, "subscribe to 1–1024 cells")
+		fail(w, 400, "subscribe to 1–4096 cells")
 		return
 	}
 	f, ok := w.(http.Flusher)

@@ -48,10 +48,18 @@ func TestUnauthenticatedAdminIsDenied(t *testing.T) {
 	}
 }
 func TestZoneValidation(t *testing.T) {
+	cells := make([]string, 4096)
+	for i := range cells {
+		cells[i] = fmt.Sprintf("%d:12668", i)
+	}
+	if got, err := parseCells(strings.Join(cells, ",")); err != nil || len(got) != 4096 {
+		t.Fatalf("full 250 m subscription rejected: %d %v", len(got), err)
+	}
+
 	if _, e := parseCells("123:456,123:456"); e != nil {
 		t.Fatal(e)
 	}
-	for _, s := range []string{"oops", "1:2:3", "-1:2", strings.Repeat("123:456,", 1025)} {
+	for _, s := range []string{"oops", "1:2:3", "-1:2", strings.Repeat("123:456,", 4097)} {
 		if _, e := parseCells(s); e == nil {
 			t.Fatal("accepted invalid zones")
 		}

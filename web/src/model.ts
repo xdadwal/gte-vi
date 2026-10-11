@@ -6,6 +6,8 @@ import {
 } from "./settings-values";
 import proj4 from "proj4";
 import { distanceToZone, pointInZone, type Node, type Zone } from "./routing";
+export const REPORT_CELL_METERS = 250;
+export const MAX_SUBSCRIPTION_CELLS = 4096;
 export const UTM = "+proj=utm +zone=43 +datum=WGS84 +units=m +no_defs";
 export type Incident = {
   id: string;
@@ -55,7 +57,13 @@ export function ll(x: number, y: number): [number, number] {
 }
 export function zone(i: Incident): Zone {
   const [x, y] = i.cell.split(":").map(Number);
-  return { x: x * 500, y: y * 500, width: 500, height: 500, buffer: i.buffer };
+  return {
+    x: x * REPORT_CELL_METERS,
+    y: y * REPORT_CELL_METERS,
+    width: REPORT_CELL_METERS,
+    height: REPORT_CELL_METERS,
+    buffer: i.buffer,
+  };
 }
 export function cellsInBounds(
   west: number,
@@ -69,26 +77,28 @@ export function cellsInBounds(
       xy(east, south),
       xy(east, north),
     ],
-    xmin = Math.floor(Math.min(...ps.map((p) => p.x)) / 500),
-    xmax = Math.floor(Math.max(...ps.map((p) => p.x)) / 500),
-    ymin = Math.floor(Math.min(...ps.map((p) => p.y)) / 500),
-    ymax = Math.floor(Math.max(...ps.map((p) => p.y)) / 500);
-  if ((xmax - xmin + 1) * (ymax - ymin + 1) > 1024) return [];
+    xmin = Math.floor(Math.min(...ps.map((p) => p.x)) / REPORT_CELL_METERS),
+    xmax = Math.floor(Math.max(...ps.map((p) => p.x)) / REPORT_CELL_METERS),
+    ymin = Math.floor(Math.min(...ps.map((p) => p.y)) / REPORT_CELL_METERS),
+    ymax = Math.floor(Math.max(...ps.map((p) => p.y)) / REPORT_CELL_METERS);
+  if ((xmax - xmin + 1) * (ymax - ymin + 1) > MAX_SUBSCRIPTION_CELLS) return [];
   const cells = [];
   for (let x = xmin; x <= xmax; x++)
     for (let y = ymin; y <= ymax; y++) cells.push(`${x}:${y}`);
   return cells;
 }
-export function cellsAround(p: Node, r: number) {
+export function cellsAround(p: Node, r: number, cellSize = REPORT_CELL_METERS) {
+  if (!Number.isFinite(cellSize) || cellSize <= 0)
+    throw new Error("Invalid metric-grid cell size.");
   const cells = [];
   for (
-    let x = Math.floor((p.x - r) / 500);
-    x <= Math.floor((p.x + r) / 500);
+    let x = Math.floor((p.x - r) / cellSize);
+    x <= Math.floor((p.x + r) / cellSize);
     x++
   )
     for (
-      let y = Math.floor((p.y - r) / 500);
-      y <= Math.floor((p.y + r) / 500);
+      let y = Math.floor((p.y - r) / cellSize);
+      y <= Math.floor((p.y + r) / cellSize);
       y++
     )
       cells.push(`${x}:${y}`);
