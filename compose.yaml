@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: gte
+      POSTGRES_USER: gte
+      POSTGRES_PASSWORD: local-only
+    ports: ['127.0.0.1:55432:5432']
+    volumes: [gte-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gte']
+      interval: 3s
+      retries: 20
+  redis:
+    image: redis:8-alpine
+    ports: ['127.0.0.1:56379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 3s
+      retries: 20
+volumes:
+  gte-db:

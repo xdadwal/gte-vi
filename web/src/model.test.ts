@@ -1,0 +1,4 @@
+import {it,expect} from 'vitest';import {alertFor,isOpen,xy,type Incident,type Refuge} from './model';
+it('matches published metric-grid fixtures',()=>{const p=xy(77.209,28.6139);expect(Math.floor(p.x/500)).toBe(1431);expect(Math.floor(p.y/500)).toBe(6334);});
+it('escalation waits five minutes and rechecks after cooldown',()=>{const i={id:'i',cell:'0:0',status:'active',average:2,buffer:200} as Incident,p={id:'',x:100,y:100};const first=alertFor(i,p,500,1000);expect(first.notify).toBe(true);const next=alertFor({...i,average:3},p,500,2000,first.memory);expect(next.notify).toBe(false);expect(alertFor({...i,average:3},p,500,301000,next.memory).notify).toBe(true);});
+it('opening exceptions use Delhi time',()=>{const r={closed:false,hours:{'0':[[0,1440]]},exceptions:{'2026-10-11':[]}} as unknown as Refuge;expect(isOpen(r,Date.parse('2026-10-11T10:00:00Z'))).toBe(false);});
