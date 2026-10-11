@@ -56,7 +56,7 @@ The synthetic benchmark route was 801.11 m. Desktop Chromium first worker reques
 - One-hour sustained 20,000 foreground sessions with report traffic, expiry transitions, concentrated and distributed zones, reconnect bursts, and polling fallback on the intended infrastructure.
 - Deployed p95 current-state visibility <2 seconds and writes <500 ms, with representative network conditions, plus validated replica/database/Redis/CDN budgets toward 100,000 concurrent users.
 - Physical 4 GB Android warm-route p95 <2 seconds, maximum 3 km graph transfer <10 MB across Delhi, and worker heap <100 MB.
-- Real OIDC provider end-to-end sign-in/revocation, HTTPS domain/proxy configuration, host-confirmed operational refuges, and data/telemetry/backup arrangements.
+- Production password sign-in/reset/revocation, HTTPS domain/proxy configuration, host-confirmed operational refuges, and data/telemetry/backup arrangements.
 
 Production credentials, infrastructure, and genuine refuge availability are deliberately not fabricated. The local application and implementation tests are ready; these rollout gates require the deployment and devices above.
 

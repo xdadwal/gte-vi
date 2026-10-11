@@ -1,10 +1,6 @@
 {
   "PUBLIC_ORIGIN": "https://your-domain.example",
   "OWNER_EMAIL": "",
-  "OIDC_ISSUER": "https://accounts.google.com",
-  "OIDC_CLIENT_ID": "",
-  "OIDC_CLIENT_SECRET": "",
-  "OIDC_REDIRECT_URL": "https://your-domain.example/api/v1/auth/callback",
   "SQL_CONNECTION_NAME": "PROJECT_ID:asia-south2:gte-db",
   "GRAPH_BUCKET": "gs://PROJECT_ID-gte-routing",
   "LB_IP": ""

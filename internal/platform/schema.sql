@@ -23,7 +23,15 @@ CREATE OR REPLACE FUNCTION incident_json(i incidents) RETURNS jsonb LANGUAGE SQL
  'hotzone',ST_AsGeoJSON(ST_Transform(ST_Buffer(ST_MakeEnvelope(i.x*i.cell_size,i.y*i.cell_size,(i.x+1)*i.cell_size,(i.y+1)*i.cell_size,32643),i.buffer),4326))::jsonb,
  'expiresAt',(SELECT min(expires_at) FROM reports r WHERE r.episode=i.id AND NOT suppressed AND expires_at>now()))
 $$;
-CREATE TABLE IF NOT EXISTS login_flows(state text PRIMARY KEY,nonce text NOT NULL,verifier text NOT NULL,expires_at timestamptz NOT NULL);
+ALTER TABLE admins ADD COLUMN IF NOT EXISTS password_hash text;
+-- Switching authentication invalidates previously minted provider sessions once.
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM schema_version WHERE version=3) THEN
+  DELETE FROM admin_sessions;
+  INSERT INTO schema_version VALUES(3);
+ END IF;
+END $$;
+DROP TABLE IF EXISTS login_flows;
 
 CREATE TABLE IF NOT EXISTS runtime_state(name text PRIMARY KEY,checked_at timestamptz NOT NULL);
 

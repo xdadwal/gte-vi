@@ -66,6 +66,9 @@ export function Admin() {
     [checking, setChecking] = useState(true),
     [dev, setDev] = useState(false),
     [devToken, setDevToken] = useState(""),
+    [username, setUsername] = useState(""),
+    [password, setPassword] = useState(""),
+    [signingIn, setSigningIn] = useState(false),
     [view, setView] = useState<View>(
       ["incidents", "refuges", "activity", "team", "settings"].includes(
         new URLSearchParams(location.search).get("view") || "",
@@ -189,9 +192,53 @@ export function Admin() {
             current.
           </h1>
           <p>Manage community reports and verified refuges.</p>
-          <a className="primary" href="/api/v1/auth/login">
-            Sign in with your approved account
-          </a>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (signingIn) return;
+              setSigningIn(true);
+              setError("");
+              try {
+                await api("auth/login", "POST", { username, password });
+                setPassword("");
+                setMe(await api<Identity>("admin/me"));
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setSigningIn(false);
+              }
+            }}
+          >
+            <label>
+              Username (email)
+              <input
+                type="email"
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+            <button type="submit" className="primary" disabled={signingIn}>
+              {signingIn ? "Signing in…" : "Sign in"}
+            </button>
+            <p className="muted">
+              Access is limited to approved team members. Contact the site
+              operator for a password reset.
+            </p>
+          </form>
           {dev && (
             <form
               onSubmit={async (e) => {

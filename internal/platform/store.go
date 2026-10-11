@@ -310,7 +310,7 @@ func (s *Store) Expire(ctx context.Context) error {
 			return e
 		}
 	}
-	_, e = tx.Exec(ctx, `DELETE FROM reports WHERE expires_at<now()-interval '1 hour'; DELETE FROM receipts WHERE expires_at<now(); DELETE FROM outbox WHERE published_at<now()-interval '1 hour'; DELETE FROM admin_sessions WHERE expires_at<now(); DELETE FROM login_flows WHERE expires_at<now(); DELETE FROM sessions s WHERE expires_at<now() AND NOT EXISTS(SELECT 1 FROM reports r WHERE r.session_id=s.id) AND NOT EXISTS(SELECT 1 FROM receipts r WHERE r.session_id=s.id); INSERT INTO runtime_state(name,checked_at) VALUES('expiry',now()) ON CONFLICT(name) DO UPDATE SET checked_at=excluded.checked_at`)
+	_, e = tx.Exec(ctx, `DELETE FROM reports WHERE expires_at<now()-interval '1 hour'; DELETE FROM receipts WHERE expires_at<now(); DELETE FROM outbox WHERE published_at<now()-interval '1 hour'; DELETE FROM admin_sessions WHERE expires_at<now(); DELETE FROM sessions s WHERE expires_at<now() AND NOT EXISTS(SELECT 1 FROM reports r WHERE r.session_id=s.id) AND NOT EXISTS(SELECT 1 FROM receipts r WHERE r.session_id=s.id); INSERT INTO runtime_state(name,checked_at) VALUES('expiry',now()) ON CONFLICT(name) DO UPDATE SET checked_at=excluded.checked_at`)
 	if e != nil {
 		return e
 	}

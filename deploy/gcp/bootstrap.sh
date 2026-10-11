@@ -66,14 +66,12 @@ python3 - "$role" <<'PY'
 import ipaddress, json, pathlib, sys, urllib.parse
 base = pathlib.Path('/etc/gte')
 c = json.loads((base / 'config.json').read_text())
-required = ('PUBLIC_ORIGIN', 'OWNER_EMAIL', 'OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_REDIRECT_URL', 'SQL_CONNECTION_NAME', 'GRAPH_BUCKET', 'LB_IP')
+required = ('PUBLIC_ORIGIN', 'OWNER_EMAIL', 'SQL_CONNECTION_NAME', 'GRAPH_BUCKET', 'LB_IP')
 if any(not isinstance(c.get(k), str) or not c[k] or '\n' in c[k] or '\r' in c[k] for k in required):
     raise SystemExit('Incomplete deployment configuration')
 origin = urllib.parse.urlparse(c['PUBLIC_ORIGIN'])
 if origin.scheme != 'https' or not origin.hostname or origin.path not in ('', '/') or origin.query or origin.fragment:
     raise SystemExit('PUBLIC_ORIGIN must be an HTTPS origin')
-if c['OIDC_REDIRECT_URL'] != c['PUBLIC_ORIGIN'].rstrip('/') + '/api/v1/auth/callback':
-    raise SystemExit('OIDC callback must match the application origin')
 if sys.argv[1] not in ('gateway', 'worker'):
     raise SystemExit('Invalid VM application role')
 lb_ip = str(ipaddress.IPv4Address(c['LB_IP']))

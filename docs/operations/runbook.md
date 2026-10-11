@@ -2,7 +2,7 @@
 
 ## Deployment inputs
 
-Provide HTTPS `PUBLIC_ORIGIN`, a real `OWNER_EMAIL`, PostgreSQL/PostGIS and Redis URLs, and an OIDC issuer/client with callback `${PUBLIC_ORIGIN}/api/v1/auth/callback`. Register that callback exactly. Supply `OIDC_CLIENT_SECRET` if required by the identity provider. Verified email and the database allowlist both gate access. Production rejects development-token authentication and a non-HTTPS origin. No deployed credentials or genuine hosts are seeded.
+Provide HTTPS `PUBLIC_ORIGIN`, a real `OWNER_EMAIL`, and PostgreSQL/PostGIS and Redis URLs. Approved team members sign in with their email as username and a password. Production rejects development-token authentication and a non-HTTPS origin. No deployed credentials or genuine hosts are seeded. Provision the initial owner with `gte set-password --email EMAIL` after migrations; the command prompts without echo and requires database access. Add other accounts in Team, then provision their passwords with the same command. Use `--password-stdin` only with a private pipe. Resets revoke all sessions. No public registration or email recovery is enabled.
 
 Build `Dockerfile`; mount the generated graph read-only at `/app/routing`, or route graph URLs directly to its CDN. Configure a basemap via frontend `VITE_MAP_STYLE` when building. The image runs as an unprivileged user and contains no graph download or secrets.
 
@@ -31,7 +31,7 @@ proxy_buffering off;
 proxy_read_timeout 75s;
 ```
 
-Set `TRUSTED_PROXY_CIDRS` only to proxies that **replace** `X-Real-IP`. Direct traffic ignores that header. Adjust network admission limits in owner Settings according to measured shared-network traffic; default 300/IP/min applies to new anonymous sessions, reports, and OIDC login starts. Session reporting defaults remain 30 seconds and 30 per hour. `NETWORK_RATE_PER_MINUTE` is deprecated and ignored; persisted settings are authoritative. Redis admission remembers idempotency keys so a failed admitted write can retry without waiting for another cooldown.
+Set `TRUSTED_PROXY_CIDRS` only to proxies that **replace** `X-Real-IP`. Direct traffic ignores that header. Adjust network admission limits in owner Settings according to measured shared-network traffic; default 300/IP/min applies to new anonymous sessions and reports. Password login has separate shared Redis limits of 30 attempts/IP and 10 attempts/account per 15 minutes and fails closed if Redis is unavailable. Session reporting defaults remain 30 seconds and 30 per hour. `NETWORK_RATE_PER_MINUTE` is deprecated and ignored; persisted settings are authoritative. Redis admission remembers idempotency keys so a failed admitted write can retry without waiting for another cooldown.
 
 Tune the pgx pool through the database URL (`pool_max_conns`, `pool_min_conns`); count connections across every API/gateway/worker replica. Avoid unbounded autoscaling into a database connection ceiling. The published capacity goal needs deployed tests, not extrapolation from this laptop.
 

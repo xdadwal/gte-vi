@@ -32,7 +32,7 @@ flowchart LR
 ```
 
 All VMs lack external IP addresses. SSH is restricted to IAP and OS Login.
-Cloud NAT provides outbound access for package installation and OIDC. Nginx
+Cloud NAT provides outbound access for package installation and image downloads. Nginx
 accepts backend traffic from Google's load-balancer ranges, extracts the client
 IP from the trusted forwarding chain, and replaces `X-Real-IP` before proxying
 to Go on localhost. The app trusts only that localhost proxy. Proxy access logs
@@ -90,8 +90,8 @@ The private graph bucket is not a public CDN in this initial deployment.
 
 ## Finish production configuration
 
-Reserve an application domain and create a web OAuth client with the exact
-HTTPS callback `/api/v1/auth/callback`. Copy
+Reserve an application domain. Admin sign-in uses an approved email and password,
+with no OAuth provider or client configuration. Copy
 `deploy/gcp/app-config.example.json` into an ignored `artifacts/gcp/` directory,
 set file permissions to 600, and fill every field. Use the reserved `gte-web`
 address for `LB_IP`. Store the completed file directly in Secret Manager:
@@ -100,11 +100,23 @@ address for `LB_IP`. Store the completed file directly in Secret Manager:
 gcloud secrets versions add gte-app-config --data-file=artifacts/gcp/app-config.json --project=PROJECT_ID
 ```
 
-Do not commit the completed file or print the client secret. Bootstrap retries
+Do not commit the completed file or print credentials. Bootstrap retries
 missing configuration every 60 seconds. It starts the SQL proxy, app and nginx
 only after valid configuration and (on web VMs) a graph manifest are available.
 Changing a secret does not restart already-running containers: restart the
 launch service or perform a coordinated rollout after updating configuration.
+
+Provision the initial owner's password once the app is running. Connect to a web
+VM through IAP, then use the hidden interactive prompt (replace the email):
+
+```sh
+sudo docker exec -it gte-app /app/gte set-password --email owner@your-domain.example
+```
+
+The username is `OWNER_EMAIL`. Add subsequent accounts in owner Team access and
+run the same command for each approved email. Resetting a password revokes all
+sessions for that account. Passwords never belong in app configuration or command
+arguments. There is no public registration or email reset service.
 
 Create a Google-managed certificate for the domain, HTTPS target proxy and
 443 forwarding rule using the reserved address and `gte-web` URL map. Point DNS
@@ -114,7 +126,7 @@ requests. Clients must tolerate reconnects during timeout, maintenance and
 scale-down. Connection draining is 60 seconds; it is not unlimited stream
 preservation. The worker must remain running even when no visitors are online.
 
-Verify the HTTPS frontend, `/api/v1/health`, OIDC login, authenticated admin API,
+Verify the HTTPS frontend, `/api/v1/health`, password login, authenticated admin API,
 report submission, SSE updates, polling fallback and walking graph retrieval
 before activating the prepared autoscaling policy:
 
