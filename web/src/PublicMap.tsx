@@ -5,6 +5,7 @@ import {
   StarIcon,
   HouseIcon,
   CrosshairIcon,
+  ArrowClockwiseIcon,
   ArrowLeftIcon,
   SpeakerHighIcon,
   GearIcon,
@@ -105,6 +106,21 @@ export function PublicMap() {
   useEffect(() => {
     location.start();
   }, []);
+  const appRoot = useRef<HTMLElement>(null);
+  const mapPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const panelElement = mapPanel.current;
+    if (!panelElement) return;
+    const positionActions = () =>
+      appRoot.current?.style.setProperty(
+        "--map-panel-height",
+        `${panelElement.getBoundingClientRect().height}px`,
+      );
+    const observer = new ResizeObserver(positionActions);
+    observer.observe(panelElement);
+    positionActions();
+    return () => observer.disconnect();
+  }, []);
   const alertSound = useRef<AlertSound | null>(null);
   if (!alertSound.current) alertSound.current = new AlertSound();
   useEffect(() => {
@@ -152,7 +168,10 @@ export function PublicMap() {
     config.bufferPerStarMeters,
     config.pendingBufferMeters,
   ]);
-  const { snapshot, state, fresh } = useLive(cells, !viewCells.length);
+  const { snapshot, state, fresh, refresh, refreshing, refreshError } = useLive(
+    cells,
+    !viewCells.length,
+  );
   const liveFresh = useRef(fresh);
   liveFresh.current = fresh;
   const incidents = snapshot.incidents;
@@ -466,7 +485,7 @@ export function PublicMap() {
             ? "Updates outdated"
             : "Connecting";
   return (
-    <main className="public-app" id="main-content">
+    <main className="public-app" id="main-content" ref={appRoot}>
       <MapView
         incidents={incidents}
         exitCoordinates={route ? initialExit(route) : undefined}
@@ -500,16 +519,31 @@ export function PublicMap() {
           <GearIcon size={22} />
         </button>
       </header>
-      <button
-        className="locate icon-button"
-        aria-label="Locate me"
-        onClick={() => {
-          location.start();
-          setLocate((n) => n + 1);
-        }}
-      >
-        <CrosshairIcon size={24} />
-      </button>
+      <div className="map-actions" role="group" aria-label="Map actions">
+        <button
+          className="icon-button"
+          aria-label={refreshing ? "Refreshing map" : "Refresh map"}
+          title={refreshing ? "Refreshing map…" : "Refresh map"}
+          aria-busy={refreshing}
+          disabled={refreshing}
+          onClick={() => void refresh()}
+        >
+          <ArrowClockwiseIcon
+            size={24}
+            className={refreshing ? "refreshing" : undefined}
+          />
+        </button>
+        <button
+          className="locate icon-button"
+          aria-label="Locate me"
+          onClick={() => {
+            location.start();
+            setLocate((n) => n + 1);
+          }}
+        >
+          <CrosshairIcon size={24} />
+        </button>
+      </div>
       {banner && (
         <div className="alert-banner" role="status">
           <span>{banner}</span>
@@ -526,6 +560,7 @@ export function PublicMap() {
         </div>
       )}
       <section
+        ref={mapPanel}
         className={`map-panel ${panel === "home" ? "compact" : ""}`}
         aria-label="Map controls"
       >
@@ -802,6 +837,11 @@ export function PublicMap() {
         {(error || location.error) && (
           <p className="error" role="alert">
             {error || location.error}
+          </p>
+        )}
+        {refreshError && (
+          <p className="error" role="alert">
+            {refreshError}
           </p>
         )}
         {panel === "home" && (

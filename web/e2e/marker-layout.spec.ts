@@ -291,3 +291,75 @@ test("delayed settings set the initial view when location is denied", async ({
     .toBeLessThan(3);
   await expect(page.getByText(/Location access is blocked/)).toBeVisible();
 });
+
+for (const width of [320, 390, 1440])
+  test(`refresh control loads fresh map data without moving the camera at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await fixtures(page, 14);
+    await page.goto("/");
+    const oldBadge = page.getByRole("button", {
+      name: "Incident 3.0 stars, 8 reports",
+      exact: true,
+    });
+    await expect(oldBadge).toBeVisible();
+    await expect
+      .poll(
+        async () => (await oldBadge.locator(".map-badge").boundingBox())?.width,
+      )
+      .toBeCloseTo(44.8, 0);
+    const before = await oldBadge.boundingBox();
+    const areas = [incidentAt(0, 0), incidentAt(1, 4), incidentAt(2, 5)];
+    const snapshot = {
+      incidents: areas,
+      refuges: [],
+      serverTime: new Date().toISOString(),
+    };
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let requests = 0;
+    await page.route("**/api/v1/snapshot?**", async (route) => {
+      requests++;
+      await ready;
+      await route.fulfill({ json: snapshot });
+    });
+    await page.route("**/api/v1/events?**", (route) =>
+      route.fulfill({
+        contentType: "text/event-stream",
+        body: `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
+      }),
+    );
+    const refresh = page.getByRole("button", {
+      name: "Refresh map",
+      exact: true,
+    });
+    const target = await refresh.boundingBox();
+    expect(target!.width).toBeGreaterThanOrEqual(44);
+    expect(target!.height).toBeGreaterThanOrEqual(44);
+    await refresh.click();
+    const loading = page.getByRole("button", {
+      name: "Refreshing map",
+      exact: true,
+    });
+    await expect(loading).toBeDisabled();
+    await expect(loading).toHaveAttribute("aria-busy", "true");
+    expect(requests).toBe(1);
+    release();
+    const updated = page.getByRole("button", {
+      name: "Incident 4.0 stars, 8 reports",
+      exact: true,
+    });
+    await expect(updated).toBeVisible();
+    await expect(refresh).toBeEnabled();
+    const after = await updated.boundingBox();
+    expect(after!.x).toBeCloseTo(before!.x, 0);
+    expect(after!.y).toBeCloseTo(before!.y, 0);
+    expect(after!.width).toBeCloseTo(before!.width, 0);
+    // The short mocked SSE response closes and may trigger normal fallback polling.
+    await page.screenshot({
+      path: `../artifacts/screenshots/map-refresh-${width}.png`,
+    });
+  });

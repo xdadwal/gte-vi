@@ -350,3 +350,156 @@ test("location watch survives temporary errors and recovers on the next fix", ()
   unmount();
   expect(clearWatch).toHaveBeenCalledWith(1);
 });
+
+test("manual refresh fetches the current area once and reconnects live updates", async () => {
+  let resolve!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation(() => new Promise((r) => (resolve = r)));
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  const previous = Events.current;
+  const close = vi.spyOn(previous, "close");
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+    void result.current.refresh();
+  });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain(
+    "cells=1431:6334",
+  );
+  expect(close).toHaveBeenCalledOnce();
+  expect(result.current.refreshing).toBe(true);
+  await act(async () => {
+    resolve({
+      ok: true,
+      json: async () => ({
+        incidents: [],
+        refuges: [{ id: "fresh" }],
+        serverTime: "now",
+      }),
+    } as Response);
+    await refreshing;
+  });
+  expect(result.current.snapshot.refuges[0].id).toBe("fresh");
+  expect(result.current.refreshing).toBe(false);
+  expect(result.current.fresh).toBe(true);
+  expect(Events.current).not.toBe(previous);
+});
+
+test("failed manual refresh retains map data and allows retry", async () => {
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [{ id: "existing" }],
+      serverTime: "now",
+    }),
+  );
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(result.current.snapshot.refuges[0].id).toBe("existing");
+  expect(result.current.refreshError).toContain("Could not refresh");
+  expect(result.current.refreshing).toBe(false);
+});
+
+test("manual refresh times out and releases the retry control", async () => {
+  vi.useFakeTimers();
+  vi.mocked(fetch).mockImplementation(
+    (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError")),
+        );
+      }),
+  );
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+  });
+  await act(async () => {
+    vi.advanceTimersByTime(15000);
+    await refreshing;
+  });
+  expect(result.current.refreshing).toBe(false);
+  expect(result.current.refreshError).toContain("Could not refresh");
+  expect(vi.mocked(fetch).mock.calls[0][1]?.signal?.aborted).toBe(true);
+});
+
+test("a delayed refresh cannot replace data for a new map area", async () => {
+  let resolve!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const { result, rerender } = renderHook(({ cell }) => useLive([cell]), {
+    initialProps: { cell: "1431:6334" },
+  });
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+  });
+  const signal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+  rerender({ cell: "1432:6334" });
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [{ id: "new-area" }],
+      serverTime: "now",
+    }),
+  );
+  await act(async () => {
+    resolve({
+      ok: true,
+      json: async () => ({
+        incidents: [],
+        refuges: [{ id: "old-area" }],
+        serverTime: "old",
+      }),
+    } as Response);
+    await refreshing;
+  });
+  expect(signal?.aborted).toBe(true);
+  expect(result.current.snapshot.refuges[0].id).toBe("new-area");
+  expect(result.current.refreshing).toBe(false);
+});
+
+test("stale monitor does not start a second pull during manual refresh", async () => {
+  vi.useFakeTimers();
+  let resolve!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [],
+      serverTime: "now",
+    }),
+  );
+  vi.setSystemTime(Date.now() + 46000);
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+  });
+  act(() => vi.advanceTimersByTime(1000));
+  expect(fetch).toHaveBeenCalledOnce();
+  await act(async () => {
+    resolve({
+      ok: true,
+      json: async () => ({
+        incidents: [],
+        refuges: [{ id: "fresh" }],
+        serverTime: "now",
+      }),
+    } as Response);
+    await refreshing;
+  });
+  expect(result.current.snapshot.refuges[0].id).toBe("fresh");
+});

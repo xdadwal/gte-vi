@@ -297,14 +297,31 @@ time {
 .map-header .live-state {
   margin-left: auto;
 }
-.locate {
+.map-actions {
   position: absolute;
   right: 16px;
-  bottom: 215px;
+  bottom: calc(var(--map-panel-height, 203px) + 12px);
   z-index: 20;
+  display: flex;
+  gap: 8px;
+}
+.map-actions .icon-button {
   background: var(--paper);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
+}
+.refreshing {
+  animation: refresh-turn 1s linear infinite;
+}
+@keyframes refresh-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .refreshing {
+    animation: none;
+  }
 }
 .map-panel {
   position: absolute;
@@ -1011,7 +1028,7 @@ time {
     letter-spacing: 0;
     color: var(--muted);
   }
-  .locate {
+  .map-actions {
     right: 24px;
     bottom: 116px;
   }
@@ -1149,9 +1166,6 @@ time {
   .team-view form {
     align-items: stretch;
     flex-direction: column;
-  }
-  .public-app:has(.map-panel:not(.compact)) .locate {
-    bottom: calc(66dvh + 12px);
   }
   .map-panel.compact {
     gap: 8px;
