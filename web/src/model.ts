@@ -137,7 +137,7 @@ export function alertFor(
   delete memory.outsideSince;
   const notify =
     (!memory.last || now - memory.last >= 300000) &&
-    (!memory.inside || i.average - memory.severity >= 1);
+    (!memory.inside || i.average - memory.severity >= 1 - 1e-9);
   if (notify || memory.inside) memory.inside = true;
   if (notify) {
     memory.last = now;

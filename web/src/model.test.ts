@@ -73,3 +73,17 @@ it("refuge opening must be continuous through ETA", () => {
     ),
   ).toBe(false);
 });
+it("an exact one-star decimal escalation is not lost to floating point rounding", () => {
+  const i = {
+      id: "i",
+      cell: "0:0",
+      status: "active",
+      average: 4.1,
+      buffer: 410,
+    } as Incident,
+    p = { id: "", x: 100, y: 100 };
+  expect(
+    alertFor(i, p, 500, 301000, { last: 1000, severity: 3.1, inside: true })
+      .notify,
+  ).toBe(true);
+});

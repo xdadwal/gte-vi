@@ -5,7 +5,7 @@ These are local engineering measurements, not a production-capacity promise. Hos
 ## Verified behavior
 
 - Go race suite with a dedicated PostGIS test database and `go vet` passed. Covers aggregation/latest50, replacement/idempotency, activation, expiry, new episodes before the expiry worker, moderation, refuge privacy/revision conflicts, last-owner protection, worker lease rejection, zone fanout/slow receiver/reset, origin rejection and unauthenticated access.
-- 18 frontend tests passed: constrained route geometry/search, metric grid and Delhi opening exceptions, continuous opening through ETA, cooldown/reentry, hold cancellation, removal tombstones, authoritative refuge refresh, and delayed responses on a closed stream.
+- 19 frontend tests passed: constrained route geometry/search, metric grid and Delhi opening exceptions, continuous opening through ETA, cooldown/reentry and decimal escalation, hold cancellation, removal tombstones, authoritative refuge refresh, and delayed responses on a closed stream.
 - Browser journeys passed for anonymous mobile reporting, operator draft/publication/closure, desktop/tablet/mobile overflow, and accessibility checks including contrast. Tested widths 390, 820, and 1440 px. A separate real-graph worker benchmark passed.
 - The production frontend was exercised against both the Go static-file server and the built, unprivileged Docker image. All four browser journeys passed, including real-graph routing and live host closure marking the route affected. Docker image build and health checks passed.
 - Independent code review identified five reporting/routing/reconnect issues and two recovery issues introduced by caching. All were fixed and reviewed again; no important recovery blockers remained.
