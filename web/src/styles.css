@@ -297,14 +297,31 @@ time {
 .map-header .live-state {
   margin-left: auto;
 }
-.locate {
+.map-actions {
   position: absolute;
   right: 16px;
-  bottom: 215px;
+  bottom: calc(var(--map-panel-height, 203px) + 12px);
   z-index: 20;
+  display: flex;
+  gap: 8px;
+}
+.map-actions .icon-button {
   background: var(--paper);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
+}
+.refreshing {
+  animation: refresh-turn 1s linear infinite;
+}
+@keyframes refresh-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .refreshing {
+    animation: none;
+  }
 }
 .map-panel {
   position: absolute;
@@ -484,18 +501,36 @@ time {
   flex: 1;
 }
 .map-label {
-  padding: 0.45rem 0.6rem;
-  background: var(--paper);
-  border: 1px solid var(--severity-color, #946017);
-  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  width: max(44px, calc(64px * var(--map-badge-scale, 0.7)));
+  height: 44px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   font-weight: 700;
-  box-shadow: 0 2px 8px rgb(39 40 33/0.1);
-  font-size: 0.85rem;
-  min-height: 36px;
+  font-variant-numeric: tabular-nums;
 }
 .map-label.pending {
-  border-style: dashed;
+  width: max(44px, calc(76px * var(--map-badge-scale, 0.7)));
   font-weight: 500;
+}
+.map-badge {
+  display: grid;
+  place-items: center;
+  width: calc(64px * var(--map-badge-scale, 0.7));
+  height: calc(44px * var(--map-badge-scale, 0.7));
+  white-space: nowrap;
+  background: var(--paper);
+  border: 1px solid var(--severity-color, #946017);
+  border-radius: 4px;
+  font-size: max(10px, calc(1.1rem * var(--map-badge-scale, 0.7)));
+  line-height: 1;
+}
+.pending .map-badge {
+  width: calc(76px * var(--map-badge-scale, 0.7));
+  border-style: dashed;
 }
 .refuge-marker {
   width: 42px;
@@ -993,7 +1028,7 @@ time {
     letter-spacing: 0;
     color: var(--muted);
   }
-  .locate {
+  .map-actions {
     right: 24px;
     bottom: 116px;
   }
@@ -1132,9 +1167,6 @@ time {
     align-items: stretch;
     flex-direction: column;
   }
-  .public-app:has(.map-panel:not(.compact)) .locate {
-    bottom: calc(66dvh + 12px);
-  }
   .map-panel.compact {
     gap: 8px;
     padding-top: 8px;
@@ -1195,14 +1227,6 @@ time {
     min-height: 44px;
   }
 }
-.overview-label {
-  border-radius: 50%;
-  min-width: 40px;
-  min-height: 40px;
-  background: var(--ink);
-  color: var(--paper);
-}
-
 .maplibregl-ctrl-bottom-left {
   bottom: 200px !important;
   left: 6px !important;
@@ -1219,7 +1243,7 @@ time {
 }
 
 /* Severity is always paired with a numeric star label. */
-.map-label:not(.overview-label) {
+.map-badge {
   box-shadow:
     inset 0 -3px var(--severity-color, #946017),
     0 2px 8px rgb(39 40 33 / 0.1);

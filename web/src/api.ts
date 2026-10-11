@@ -4,10 +4,12 @@ export async function api<T>(
   body?: unknown,
   csrf?: string,
   key?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const r = await fetch("/api/v1/" + path, {
     method,
     credentials: "same-origin",
+    ...(signal ? { signal } : {}),
     headers: {
       "Content-Type": "application/json",
       ...(csrf ? { "X-CSRF-Token": csrf } : {}),

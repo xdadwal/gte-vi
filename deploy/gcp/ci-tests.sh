@@ -28,4 +28,4 @@ for attempt in $(seq 1 60); do
 done
 curl --fail --silent http://127.0.0.1:8080/api/v1/health
 curl --fail --silent http://127.0.0.1:5173/ >/dev/null
-(cd web && npx playwright test e2e/map.spec.ts e2e/hotspots.spec.ts e2e/settings.spec.ts e2e/alerts.spec.ts)
+(cd web && npx playwright test e2e/map.spec.ts e2e/hotspots.spec.ts e2e/marker-layout.spec.ts e2e/settings.spec.ts e2e/alerts.spec.ts)

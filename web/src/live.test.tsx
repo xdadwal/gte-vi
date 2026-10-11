@@ -30,7 +30,10 @@ test("maximum cell subscription leaves room for load-balancer headers in SSE and
   expect(stream.pathname.length + stream.search.length).toBeLessThan(48 * 1024);
   act(() => Events.current.onerror?.());
   await waitFor(() => expect(fetch).toHaveBeenCalled());
-  const poll = new URL(String(vi.mocked(fetch).mock.calls[0][0]), stream.origin);
+  const poll = new URL(
+    String(vi.mocked(fetch).mock.calls[0][0]),
+    stream.origin,
+  );
   expect(poll.searchParams.get("cells")?.split(",")).toEqual(cells);
   expect(poll.pathname.length + poll.search.length).toBeLessThan(48 * 1024);
 });
@@ -137,8 +140,9 @@ test("secure location requests distinguish permission denial from HTTP blocking"
   expect(result.current.error).not.toContain("requires HTTPS");
 });
 test("settings events update behavior without reconnecting the live stream", async () => {
-  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } =
-    await import("./settings");
+  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } = await import(
+    "./settings"
+  );
   const { result } = renderHook(
     () => ({ live: useLive(["1431:6334"]), settings: useSettings().settings }),
     { wrapper: SettingsProvider },
@@ -177,8 +181,9 @@ test("settings events update behavior without reconnecting the live stream", asy
 });
 test("fallback polling rebases a long interval after settings shorten it", async () => {
   vi.useFakeTimers();
-  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } =
-    await import("./settings");
+  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } = await import(
+    "./settings"
+  );
   vi.mocked(fetch).mockImplementation(async (url) => {
     if (String(url).includes("/snapshot?"))
       return {
@@ -221,8 +226,9 @@ test("fallback polling rebases a long interval after settings shorten it", async
 });
 test("pending reconnect respects newly lowered and raised reconnect bounds", async () => {
   vi.useFakeTimers();
-  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } =
-    await import("./settings");
+  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } = await import(
+    "./settings"
+  );
   const { result } = renderHook(
     () => ({
       live: useLive(["1431:6334"]),
@@ -313,4 +319,187 @@ test("a slow polling snapshot can recover after stale stream silence", async () 
   });
   expect(result.current.snapshot.serverTime).toBe("recovered");
   expect(result.current.fresh).toBe(true);
+});
+
+test("location watch survives temporary errors and recovers on the next fix", () => {
+  vi.stubGlobal("isSecureContext", true);
+  const watchPosition = vi.fn(
+    (
+      _success: (p: GeolocationPosition) => void,
+      _error: (e: { code: number }) => void,
+    ) => 1,
+  );
+  const clearWatch = vi.fn();
+  vi.stubGlobal("navigator", { geolocation: { watchPosition, clearWatch } });
+  const { result, unmount } = renderHook(() => useLocation());
+  act(() => result.current.start());
+  for (const code of [2, 3]) {
+    act(() => watchPosition.mock.calls[0][1]({ code }));
+    expect(result.current.error).toContain("Could not obtain");
+    expect(clearWatch).not.toHaveBeenCalled();
+  }
+  act(() =>
+    watchPosition.mock.calls[0][0]({
+      coords: { longitude: 77.209, latitude: 28.6139, accuracy: 10 },
+      timestamp: Date.now(),
+    } as GeolocationPosition),
+  );
+  expect(result.current.fix?.lon).toBe(77.209);
+  expect(result.current.error).toBe("");
+  expect(watchPosition).toHaveBeenCalledOnce();
+  unmount();
+  expect(clearWatch).toHaveBeenCalledWith(1);
+});
+
+test("manual refresh fetches the current area once and reconnects live updates", async () => {
+  let resolve!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation(() => new Promise((r) => (resolve = r)));
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  const previous = Events.current;
+  const close = vi.spyOn(previous, "close");
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+    void result.current.refresh();
+  });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain(
+    "cells=1431:6334",
+  );
+  expect(close).toHaveBeenCalledOnce();
+  expect(result.current.refreshing).toBe(true);
+  await act(async () => {
+    resolve({
+      ok: true,
+      json: async () => ({
+        incidents: [],
+        refuges: [{ id: "fresh" }],
+        serverTime: "now",
+      }),
+    } as Response);
+    await refreshing;
+  });
+  expect(result.current.snapshot.refuges[0].id).toBe("fresh");
+  expect(result.current.refreshing).toBe(false);
+  expect(result.current.fresh).toBe(true);
+  expect(Events.current).not.toBe(previous);
+});
+
+test("failed manual refresh retains map data and allows retry", async () => {
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [{ id: "existing" }],
+      serverTime: "now",
+    }),
+  );
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(result.current.snapshot.refuges[0].id).toBe("existing");
+  expect(result.current.refreshError).toContain("Could not refresh");
+  expect(result.current.refreshing).toBe(false);
+});
+
+test("manual refresh times out and releases the retry control", async () => {
+  vi.useFakeTimers();
+  vi.mocked(fetch).mockImplementation(
+    (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("Aborted", "AbortError")),
+        );
+      }),
+  );
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+  });
+  await act(async () => {
+    vi.advanceTimersByTime(15000);
+    await refreshing;
+  });
+  expect(result.current.refreshing).toBe(false);
+  expect(result.current.refreshError).toContain("Could not refresh");
+  expect(vi.mocked(fetch).mock.calls[0][1]?.signal?.aborted).toBe(true);
+});
+
+test("a delayed refresh cannot replace data for a new map area", async () => {
+  let resolve!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const { result, rerender } = renderHook(({ cell }) => useLive([cell]), {
+    initialProps: { cell: "1431:6334" },
+  });
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+  });
+  const signal = vi.mocked(fetch).mock.calls[0][1]?.signal;
+  rerender({ cell: "1432:6334" });
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [{ id: "new-area" }],
+      serverTime: "now",
+    }),
+  );
+  await act(async () => {
+    resolve({
+      ok: true,
+      json: async () => ({
+        incidents: [],
+        refuges: [{ id: "old-area" }],
+        serverTime: "old",
+      }),
+    } as Response);
+    await refreshing;
+  });
+  expect(signal?.aborted).toBe(true);
+  expect(result.current.snapshot.refuges[0].id).toBe("new-area");
+  expect(result.current.refreshing).toBe(false);
+});
+
+test("stale monitor does not start a second pull during manual refresh", async () => {
+  vi.useFakeTimers();
+  let resolve!: (r: Response) => void;
+  vi.mocked(fetch).mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [],
+      serverTime: "now",
+    }),
+  );
+  vi.setSystemTime(Date.now() + 46000);
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refresh();
+  });
+  act(() => vi.advanceTimersByTime(1000));
+  expect(fetch).toHaveBeenCalledOnce();
+  await act(async () => {
+    resolve({
+      ok: true,
+      json: async () => ({
+        incidents: [],
+        refuges: [{ id: "fresh" }],
+        serverTime: "now",
+      }),
+    } as Response);
+    await refreshing;
+  });
+  expect(result.current.snapshot.refuges[0].id).toBe("fresh");
 });

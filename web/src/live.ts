@@ -17,6 +17,9 @@ export function useLive(cells: string[], overview = false) {
     [state, setState] = useState<
       "connecting" | "live" | "polling" | "paused" | "stale"
     >("connecting");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const refreshAction = useRef<(() => Promise<void>) | null>(null);
   const generation = useRef(0),
     loadedKey = useRef("");
   const key = cells.join(",");
@@ -31,6 +34,8 @@ export function useLive(cells: string[], overview = false) {
   ]);
   useEffect(() => {
     const gen = ++generation.current;
+    setRefreshing(false);
+    setRefreshError("");
     setState(document.hidden ? "paused" : "connecting");
     let active = true,
       source: EventSource | undefined,
@@ -203,7 +208,46 @@ export function useLive(cells: string[], overview = false) {
       if (retry) clearTimeout(retry);
       retry = undefined;
     };
+    let refreshRequest: AbortController | undefined;
+    const refresh = async () => {
+      if (!valid() || document.hidden || refreshRequest) return;
+      const controller = (refreshRequest = new AbortController());
+      setRefreshing(true);
+      setRefreshError("");
+      stop();
+      const epoch = streamEpoch;
+      setState("connecting");
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const result = await api<Snapshot>(
+          `snapshot?${query}&overview=${overview}`,
+          "GET",
+          undefined,
+          undefined,
+          undefined,
+          controller.signal,
+        );
+        if (valid() && epoch === streamEpoch) {
+          apply(result);
+          setState("polling");
+        }
+      } catch {
+        if (valid() && epoch === streamEpoch) {
+          setState("stale");
+          setRefreshError("Could not refresh the map. Try again.");
+        }
+      } finally {
+        clearTimeout(timeout);
+        refreshRequest = undefined;
+        if (valid()) {
+          setRefreshing(false);
+          if (epoch === streamEpoch) connect();
+        }
+      }
+    };
+    refreshAction.current = refresh;
     const visibility = () => {
+      refreshRequest?.abort();
       stop();
       if (document.hidden) setState("paused");
       else {
@@ -239,6 +283,7 @@ export function useLive(cells: string[], overview = false) {
       if (
         valid() &&
         !document.hidden &&
+        !refreshRequest &&
         last &&
         Date.now() - last > configRef.current.staleSeconds * 1000
       ) {
@@ -252,6 +297,8 @@ export function useLive(cells: string[], overview = false) {
     connect();
     return () => {
       active = false;
+      refreshRequest?.abort();
+      if (refreshAction.current === refresh) refreshAction.current = null;
       if (rebaseTimers.current === rebase) rebaseTimers.current = null;
       stop();
       clearInterval(monitor);
@@ -262,6 +309,9 @@ export function useLive(cells: string[], overview = false) {
   return {
     snapshot,
     state,
+    refreshing,
+    refreshError,
+    refresh: () => refreshAction.current?.() ?? Promise.resolve(),
     fresh:
       loadedKey.current === key && (state === "live" || state === "polling"),
   };
@@ -303,9 +353,11 @@ export function useLocation() {
         setError("");
       },
       (e) => {
-        if (watch.current !== null)
-          navigator.geolocation.clearWatch(watch.current);
-        watch.current = null;
+        if (e.code === 1) {
+          if (watch.current !== null)
+            navigator.geolocation.clearWatch(watch.current);
+          watch.current = null;
+        }
         setError(
           e.code === 1
             ? "Location access is blocked. Allow location for this site and for your browser, then try again."

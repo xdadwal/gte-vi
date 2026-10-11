@@ -5,19 +5,19 @@ import type * as GeoJSON from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
-import type { Incident, Refuge, Fix, Overview } from "./model";
+import type { Incident, Refuge, Fix } from "./model";
 import { ll, REPORT_CELL_METERS } from "./model";
 import { useSettings } from "./settings";
 import { hotspotFeatures, severityColor, severityExpression } from "./hotspots";
 type Props = {
   incidents: Incident[];
-  overview?: Overview[];
   exitCoordinates?: [number, number][];
   refuges: Refuge[];
   fix?: Fix | null;
   coordinates?: [number, number][];
   affected?: boolean;
   locate?: number;
+  autoFollow?: boolean;
   selected?: Incident | null;
   onSelect?: (incidents: Incident[]) => void;
   onRefuge?: (r: Refuge) => void;
@@ -39,6 +39,10 @@ export function MapView(props: Props) {
     interacted = useRef(false),
     initialViewApplied = useRef(revision > 0),
     markers = useRef<maplibregl.Marker[]>([]);
+  const markerState = useRef<{
+    props: Props;
+    colors: string[];
+  } | null>(null);
   latest.current = props;
   function update() {
     const m = map.current;
@@ -116,27 +120,33 @@ export function MapView(props: Props) {
           ]
         : [],
     });
-    markers.current.forEach((m) => m.remove());
+    updateMarkers();
+  }
+  function updateMarkers() {
+    const m = map.current;
+    if (!m || !ready.current) return;
+    const p = latest.current;
+    const config = settingsRef.current;
+    updateMarkerScale();
+    const previous = markerState.current;
+    if (
+      previous?.props.incidents === p.incidents &&
+      previous.props.refuges === p.refuges &&
+      previous.props.entrance === p.entrance &&
+      previous.colors === config.starColors
+    )
+      return;
+    // Camera changes resize badge contents without replacing the touch targets.
+    markerState.current = { props: p, colors: config.starColors };
+    markers.current.forEach((marker) => marker.remove());
     markers.current = [];
-    for (const cluster of p.overview || []) {
-      const button = document.createElement("button");
-      button.className = "map-label overview-label";
-      button.textContent = String(cluster.count);
-      button.setAttribute(
-        "aria-label",
-        `${cluster.count} reported areas. Zoom to inspect`,
-      );
-      button.onclick = () =>
-        m.easeTo({ center: [cluster.lon, cluster.lat], zoom: 14 });
-      markers.current.push(
-        new maplibregl.Marker({ element: button })
-          .setLngLat([cluster.lon, cluster.lat])
-          .addTo(m),
-      );
-    }
     for (const i of p.incidents) {
-      const [x, y] = i.cell.split(":").map(Number),
-        button = document.createElement("button");
+      const [x, y] = i.cell.split(":").map(Number);
+      const center = ll(
+        (x + 0.5) * REPORT_CELL_METERS,
+        (y + 0.5) * REPORT_CELL_METERS,
+      );
+      const button = document.createElement("button");
       button.className =
         "map-label " + (i.status === "pending" ? "pending" : "");
       button.style.setProperty(
@@ -147,8 +157,11 @@ export function MapView(props: Props) {
               Math.max(0, Math.min(4, Math.round(i.average) - 1))
             ],
       );
-      button.textContent =
+      const badge = document.createElement("span");
+      badge.className = "map-badge";
+      badge.textContent =
         i.status === "active" ? `${i.average.toFixed(1)} ★` : "Pending";
+      button.append(badge);
       button.setAttribute(
         "aria-label",
         i.status === "active"
@@ -157,14 +170,7 @@ export function MapView(props: Props) {
       );
       button.onclick = () => latest.current.onSelect?.([i]);
       markers.current.push(
-        new maplibregl.Marker({ element: button })
-          .setLngLat(
-            ll(
-              x * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
-              y * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
-            ),
-          )
-          .addTo(m),
+        new maplibregl.Marker({ element: button }).setLngLat(center).addTo(m),
       );
     }
     for (const r of p.refuges) {
@@ -191,13 +197,24 @@ export function MapView(props: Props) {
       );
     }
   }
+  function updateMarkerScale() {
+    const zoom = map.current?.getZoom();
+    if (zoom === undefined) return;
+    // At zoom 14+, badges are 30% smaller than the previous 64/76 x 44px
+    // cards. Zooming out reduces only the badge, never the report footprint.
+    const scale = 0.56 + Math.max(0, Math.min(1, (zoom - 11) / 3)) * 0.14;
+    root.current?.style.setProperty("--map-badge-scale", String(scale));
+  }
   useEffect(() => {
     const m = new maplibregl.Map({
       container: root.current!,
       style:
         import.meta.env.VITE_MAP_STYLE ||
         "https://tiles.openfreemap.org/styles/positron",
-      center: [config.mapLon, config.mapLat],
+      center:
+        props.autoFollow && props.fix
+          ? [props.fix.lon, props.fix.lat]
+          : [config.mapLon, config.mapLat],
       zoom: config.mapZoom,
       attributionControl: false,
     });
@@ -282,12 +299,21 @@ export function MapView(props: Props) {
         b.getNorth(),
       ]);
     };
+    let markerFrame = 0;
+    const refreshMarkers = () => {
+      if (markerFrame) return;
+      markerFrame = requestAnimationFrame(() => {
+        markerFrame = 0;
+        updateMarkerScale();
+      });
+    };
+    m.on("zoom", refreshMarkers);
     m.on("moveend", bounds);
     m.on("movestart", (event) => {
       if (event.originalEvent) interacted.current = true;
     });
     m.on("dragstart", () => {
-      following.current = false;
+      if (!latest.current.autoFollow) following.current = false;
     });
     m.on("click", "incident-fill", (e) => {
       const ids = new Set((e.features || []).map((f) => f.properties?.id));
@@ -300,6 +326,8 @@ export function MapView(props: Props) {
         latest.current.onEntrance([e.lngLat.lng, e.lngLat.lat]);
     });
     return () => {
+      cancelAnimationFrame(markerFrame);
+      markerState.current = null;
       markers.current.forEach((m) => m.remove());
       ready.current = false;
       m.remove();
@@ -309,7 +337,6 @@ export function MapView(props: Props) {
   useEffect(update, [
     config,
     props.incidents,
-    props.overview,
     props.exitCoordinates,
     props.refuges,
     props.fix,
@@ -320,9 +347,12 @@ export function MapView(props: Props) {
   useEffect(() => {
     if (revision && !initialViewApplied.current) {
       initialViewApplied.current = true;
-      if (!interacted.current && !following.current)
+      if (!interacted.current)
         map.current?.jumpTo({
-          center: [config.mapLon, config.mapLat],
+          center:
+            latest.current.autoFollow && latest.current.fix
+              ? [latest.current.fix.lon, latest.current.fix.lat]
+              : [config.mapLon, config.mapLat],
           zoom: config.mapZoom,
         });
     }
@@ -339,12 +369,12 @@ export function MapView(props: Props) {
     }
   }, [props.locate]);
   useEffect(() => {
-    if (following.current && props.fix)
+    if ((props.autoFollow || following.current) && props.fix)
       map.current?.easeTo({
         center: [props.fix.lon, props.fix.lat],
         duration: 250,
       });
-  }, [props.fix]);
+  }, [props.fix, props.autoFollow]);
   useEffect(() => {
     if (props.selected) {
       const [x, y] = props.selected.cell.split(":").map(Number);
@@ -353,7 +383,7 @@ export function MapView(props: Props) {
           x * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
           y * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
         ),
-        zoom: 14,
+        zoom: Math.max(14, map.current?.getZoom() || 0),
       });
     }
   }, [props.selected?.id]);
