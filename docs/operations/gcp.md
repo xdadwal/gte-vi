@@ -139,7 +139,7 @@ report submission, SSE updates, polling fallback and walking graph retrieval
 before activating the prepared autoscaling policy:
 
 ```sh
-gcloud compute instance-groups managed set-autoscaling gte-web --region=asia-south2 --mode=on --project=PROJECT_ID
+gcloud compute instance-groups managed set-autoscaling gte-web --region=asia-south2 --mode=on --min-num-replicas=1 --max-num-replicas=3 --target-cpu-utilization=0.65 --cool-down-period=300 --project=PROJECT_ID
 ```
 
 Do not enable destructive VM autohealing based only on dependency health: a
