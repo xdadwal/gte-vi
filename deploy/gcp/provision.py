@@ -72,6 +72,8 @@ def main():
         run(["projects", "add-iam-policy-binding", project, f"--member=serviceAccount:{email}", f"--role={role}", "--condition=None"])
     run(["artifacts", "repositories", "add-iam-policy-binding", "gte", f"--location={region}", f"--member=serviceAccount:{email}", "--role=roles/artifactregistry.reader"])
     run(["storage", "buckets", "add-iam-policy-binding", f"gs://{project}-gte-routing", f"--member=serviceAccount:{email}", "--role=roles/storage.objectViewer"])
+    # gcloud storage rsync also reads bucket metadata (storage.buckets.get).
+    run(["storage", "buckets", "add-iam-policy-binding", f"gs://{project}-gte-routing", f"--member=serviceAccount:{email}", "--role=roles/storage.legacyBucketReader"])
     builder = f"gte-build@{project}.iam.gserviceaccount.com"
     ensure("build identity", ["iam", "service-accounts", "describe", builder],
            ["iam", "service-accounts", "create", "gte-build", "--display-name=GTE image builder"])
