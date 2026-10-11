@@ -4,18 +4,17 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
-	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/jackc/pgx/v5"
+	"github.com/redis/go-redis/v9"
 	"github.com/xdadwal/gte-vi/internal/platform"
-	"golang.org/x/oauth2"
+	"golang.org/x/crypto/bcrypt"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
-type Auth struct {
-	config   oauth2.Config
-	verifier *oidc.IDTokenVerifier
-}
 type Identity struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
@@ -23,17 +22,9 @@ type Identity struct {
 }
 
 func (a *App) initAuth(ctx context.Context) error {
-	if a.Config.Issuer == "" {
-		if a.Config.DevToken != "" && a.Config.Secure {
-			return errors.New("development login cannot run with production cookies")
-		}
-		return nil
+	if a.Config.DevToken != "" && a.Config.Secure {
+		return errors.New("development login cannot run with production cookies")
 	}
-	p, e := oidc.NewProvider(ctx, a.Config.Issuer)
-	if e != nil {
-		return e
-	}
-	a.auth = &Auth{config: oauth2.Config{ClientID: a.Config.ClientID, ClientSecret: a.Config.ClientSecret, Endpoint: p.Endpoint(), RedirectURL: a.Config.RedirectURL, Scopes: []string{oidc.ScopeOpenID, "email"}}, verifier: p.Verifier(&oidc.Config{ClientID: a.Config.ClientID})}
 	return nil
 }
 func (a *App) identity(r *http.Request) (Identity, bool) {
@@ -63,84 +54,116 @@ func (a *App) require(w http.ResponseWriter, r *http.Request, mutation, owner bo
 }
 func (a *App) createAdminSession(w http.ResponseWriter, r *http.Request, email string) bool {
 	id, csrf := platform.ID(), platform.ID()
-	_, e := a.Store.DB.Exec(r.Context(), `INSERT INTO admin_sessions(id,email,csrf,expires_at)SELECT $1,email,$2,now()+interval '8 hours' FROM admins WHERE email=$3 AND enabled`, platform.Hash(id), csrf, email)
-	if e != nil {
+	result, e := a.Store.DB.Exec(r.Context(), `INSERT INTO admin_sessions(id,email,csrf,expires_at)SELECT $1,email,$2,now()+interval '8 hours' FROM admins WHERE email=$3 AND enabled`, platform.Hash(id), csrf, email)
+	if e != nil || result.RowsAffected() != 1 {
 		fail(w, 503, "sign-in unavailable")
 		return false
 	}
 	a.cookie(w, "gte_admin", id, 8*3600)
 	return true
 }
+
+// The limiter is shared across replicas and fails closed when Redis is unavailable.
+var passwordLimit = redis.NewScript(`
+ local ip = redis.call('INCR', KEYS[1])
+ if ip == 1 then redis.call('EXPIRE', KEYS[1], 900) end
+ if ip > 30 then return 0 end
+ local account = redis.call('INCR', KEYS[2])
+ if account == 1 then redis.call('EXPIRE', KEYS[2], 900) end
+ if account > 10 then return 0 end
+ return 1
+`)
+var dummyPasswordHash []byte
+var dummyPasswordOnce sync.Once
+
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
-	if !a.networkLimit(r.Context(), r) {
-		fail(w, 429, "too many sign-in requests")
+	// Requiring an allowed Origin also prevents login CSRF; cookies alone are not a login proof.
+	origin := r.Header.Get("Origin")
+	if origin == "" || (origin != a.Config.PublicOrigin && (a.Config.Secure || !slices.Contains(a.Config.DevelopmentOrigins, origin))) {
+		fail(w, 403, "request origin rejected")
 		return
 	}
-	if a.auth == nil {
-		fail(w, 503, "configure operator sign-in before production deployment")
+	var b struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !decode(w, r, &b) {
 		return
 	}
-	state, nonce, verifier := platform.ID(), platform.ID(), oauth2.GenerateVerifier()
-	_, e := a.Store.DB.Exec(r.Context(), `INSERT INTO login_flows VALUES($1,$2,$3,now()+interval '5 minutes')`, state, nonce, verifier)
-	if e != nil {
+	email := strings.ToLower(strings.TrimSpace(b.Username))
+	if a.Redis == nil || a.Store == nil {
 		fail(w, 503, "sign-in unavailable")
 		return
 	}
-	a.cookie(w, "gte_login", state, 300)
-	http.Redirect(w, r, a.auth.config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), http.StatusFound)
-}
-func (a *App) callback(w http.ResponseWriter, r *http.Request) {
-	if a.auth == nil {
+	allowed, err := passwordLimit.Run(r.Context(), a.Redis, []string{"login:ip:" + platform.Hash(a.clientIP(r)), "login:account:" + platform.Hash(email)}).Int()
+	if err != nil {
 		fail(w, 503, "sign-in unavailable")
 		return
 	}
-	state := r.URL.Query().Get("state")
-	if state == "" || subtle.ConstantTimeCompare([]byte(state), []byte(token(r, "gte_login"))) != 1 {
-		fail(w, 403, "invalid sign-in state")
+	if allowed != 1 {
+		w.Header().Set("Retry-After", "900")
+		fail(w, 429, "too many sign-in attempts; try again in 15 minutes")
 		return
 	}
-	var nonce, verifier string
-	e := a.Store.DB.QueryRow(r.Context(), `DELETE FROM login_flows WHERE state=$1 AND expires_at>now() RETURNING nonce,verifier`, state).Scan(&nonce, &verifier)
-	a.cookie(w, "gte_login", "", -1)
-	if e != nil {
-		fail(w, 403, "sign-in expired")
+	if len(email) > 254 || len(b.Password) > 72 {
+		fail(w, 401, "invalid username or password")
 		return
 	}
-	ctx, c := context.WithTimeout(r.Context(), 15*time.Second)
-	defer c()
-	tok, e := a.auth.config.Exchange(ctx, r.URL.Query().Get("code"), oauth2.VerifierOption(verifier))
-	if e != nil {
-		fail(w, 403, "sign-in exchange failed")
+	select {
+	case a.loginSlots <- struct{}{}:
+		defer func() { <-a.loginSlots }()
+	default:
+		fail(w, 503, "sign-in busy; try again shortly")
 		return
 	}
-	raw, ok := tok.Extra("id_token").(string)
-	if !ok {
-		fail(w, 403, "identity token missing")
+	var hash string
+	err = a.Store.DB.QueryRow(r.Context(), `SELECT password_hash FROM admins WHERE email=$1 AND enabled AND password_hash IS NOT NULL`, email).Scan(&hash)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		fail(w, 503, "sign-in unavailable")
 		return
 	}
-	verified, e := a.auth.verifier.Verify(ctx, raw)
-	if e != nil || verified.Nonce != nonce {
-		fail(w, 403, "identity verification failed")
+	dummyPasswordOnce.Do(func() {
+		dummyPasswordHash, _ = bcrypt.GenerateFromPassword([]byte(platform.ID()), platform.PasswordCost)
+	})
+	candidate := []byte(hash)
+	if hash == "" {
+		candidate = dummyPasswordHash
+	}
+	valid := bcrypt.CompareHashAndPassword(candidate, []byte(b.Password)) == nil
+	if !valid || hash == "" {
+		fail(w, 401, "invalid username or password")
 		return
 	}
-	var claims struct {
-		Email    string `json:"email"`
-		Verified bool   `json:"email_verified"`
-	}
-	if verified.Claims(&claims) != nil || !claims.Verified {
-		fail(w, 403, "verified email required")
+	// Serialize against credential resets so a stale password cannot mint a new session.
+	tx, err := a.Store.DB.Begin(r.Context())
+	if err != nil {
+		fail(w, 503, "sign-in unavailable")
 		return
 	}
-	email := strings.ToLower(strings.TrimSpace(claims.Email))
-	var allowed bool
-	a.Store.DB.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM admins WHERE email=$1 AND enabled)`, email).Scan(&allowed)
-	if !allowed {
-		fail(w, 403, "this account has not been approved")
+	defer tx.Rollback(r.Context())
+	var current string
+	err = tx.QueryRow(r.Context(), `SELECT password_hash FROM admins WHERE email=$1 AND enabled FOR UPDATE`, email).Scan(&current)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && current != hash) {
+		fail(w, 401, "invalid username or password")
 		return
 	}
-	if a.createAdminSession(w, r, email) {
-		http.Redirect(w, r, "/admin", http.StatusFound)
+	if err != nil {
+		fail(w, 503, "sign-in unavailable")
+		return
 	}
+	id, csrf := platform.ID(), platform.ID()
+	if _, err = tx.Exec(r.Context(), `DELETE FROM admin_sessions WHERE id=$1`, platform.Hash(token(r, "gte_admin"))); err == nil {
+		_, err = tx.Exec(r.Context(), `INSERT INTO admin_sessions VALUES($1,$2,$3,now()+interval '8 hours')`, platform.Hash(id), email, csrf)
+	}
+	if err == nil {
+		err = tx.Commit(r.Context())
+	}
+	if err != nil {
+		fail(w, 503, "sign-in unavailable")
+		return
+	}
+	a.cookie(w, "gte_admin", id, 8*3600)
+	write(w, 200, map[string]bool{"ok": true})
 }
 func (a *App) devLogin(w http.ResponseWriter, r *http.Request) {
 	if a.Config.DevToken == "" || a.Config.Secure {

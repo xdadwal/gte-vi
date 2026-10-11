@@ -51,3 +51,7 @@ web/test-results/
 
 # Local phone-preview certificate helper
 /scripts/dev-cert.sh
+
+# Deployment tooling bytecode
+__pycache__/
+*.pyc

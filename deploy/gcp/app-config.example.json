@@ -1,0 +1,7 @@
+{
+  "PUBLIC_ORIGIN": "https://your-domain.example",
+  "OWNER_EMAIL": "",
+  "SQL_CONNECTION_NAME": "PROJECT_ID:asia-south2:gte-db",
+  "GRAPH_BUCKET": "gs://PROJECT_ID-gte-routing",
+  "LB_IP": ""
+}

@@ -22,7 +22,7 @@ Go race tests and vet passed with dedicated PostGIS/Redis services; all 36 front
 
 Zone outlines are removed. Six local HTTPS browser journeys passed with stronger gradient cores, including all five selected-rating descriptions and the unchanged hold-to-submit flow. A subsequent hotspot check passed after the final paint adjustment, verifying that clicking the invisible zone footprint still opens incident details. All 36 frontend tests and the production build passed. Desktop/mobile hotspot and mobile rating screenshots were visually inspected. Hotspot screenshots use isolated browser fixtures; no incident data was seeded for this UI change. Existing 250 m geometry, severity buffers, alert rules and persisted opacity settings remain unchanged. No new capacity benchmark was run.
 
-## Grant Theft Elections branding
+## Grand Theft Elections branding
 
 The app title, public map, admin sign-in and operator navigation use the renamed project and one shared original typographic wordmark. The VI lockup is removed. All 36 frontend tests, production build and six local HTTPS browser journeys passed, including renamed title/home-link assertions and responsive/accessibility checks. A separate 320 px preview had no page overflow; its wordmark and admin sign-in were visually inspected. Current documentation screenshots were refreshed. No backend behavior or deployment capacity was changed.
 
@@ -56,7 +56,7 @@ The synthetic benchmark route was 801.11 m. Desktop Chromium first worker reques
 - One-hour sustained 20,000 foreground sessions with report traffic, expiry transitions, concentrated and distributed zones, reconnect bursts, and polling fallback on the intended infrastructure.
 - Deployed p95 current-state visibility <2 seconds and writes <500 ms, with representative network conditions, plus validated replica/database/Redis/CDN budgets toward 100,000 concurrent users.
 - Physical 4 GB Android warm-route p95 <2 seconds, maximum 3 km graph transfer <10 MB across Delhi, and worker heap <100 MB.
-- Real OIDC provider end-to-end sign-in/revocation, HTTPS domain/proxy configuration, host-confirmed operational refuges, and data/telemetry/backup arrangements.
+- Production password sign-in/reset/revocation, HTTPS domain/proxy configuration, host-confirmed operational refuges, and data/telemetry/backup arrangements.
 
 Production credentials, infrastructure, and genuine refuge availability are deliberately not fabricated. The local application and implementation tests are ready; these rollout gates require the deployment and devices above.
 

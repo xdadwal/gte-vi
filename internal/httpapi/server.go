@@ -25,20 +25,20 @@ import (
 )
 
 type Config struct {
-	PublicOrigin, Owner, Issuer, ClientID, ClientSecret, RedirectURL, DevToken, GraphDir, WebDir string
-	Secure                                                                                       bool
-	Role                                                                                         string
-	TrustedProxyCIDRs                                                                            []string
-	DevelopmentOrigins                                                                           []string
+	PublicOrigin, Owner, DevToken, GraphDir, WebDir string
+	Secure                                          bool
+	Role                                            string
+	TrustedProxyCIDRs                               []string
+	DevelopmentOrigins                              []string
 }
 type App struct {
+	loginSlots  chan struct{}
 	settingsMu  sync.RWMutex
 	settings    domain.SettingsEnvelope
 	Store       *platform.Store
 	Redis       *redis.Client
 	Config      Config
 	hub         *Hub
-	auth        *Auth
 	connected   atomic.Bool
 	workerFresh atomic.Bool
 	snapMu      sync.Mutex
@@ -47,7 +47,7 @@ type App struct {
 }
 
 func New(s *platform.Store, r *redis.Client, c Config) *App {
-	return &App{Store: s, Redis: r, Config: c, hub: NewHub(), snapCache: map[string]cachedSnapshot{}}
+	return &App{loginSlots: make(chan struct{}, 2), Store: s, Redis: r, Config: c, hub: NewHub(), snapCache: map[string]cachedSnapshot{}}
 }
 func write(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -153,8 +153,7 @@ func (a *App) Handler() http.Handler {
 		}
 		http.StripPrefix("/api/v1/routing/", http.FileServer(http.Dir(a.Config.GraphDir))).ServeHTTP(w, r)
 	})
-	m.HandleFunc("GET /api/v1/auth/login", a.login)
-	m.HandleFunc("GET /api/v1/auth/callback", a.callback)
+	m.HandleFunc("POST /api/v1/auth/login", a.login)
 	m.HandleFunc("POST /api/v1/auth/dev", a.devLogin)
 	m.HandleFunc("GET /api/v1/admin/me", a.me)
 	m.HandleFunc("POST /api/v1/admin/logout", a.logout)
@@ -222,10 +221,7 @@ var rateScript = redis.NewScript(`if redis.call('EXISTS',KEYS[3])==1 then return
 func (a *App) networkLimit(ctx context.Context, r *http.Request) bool {
 	return a.networkLimitWithSettings(ctx, r, a.currentSettings().Values)
 }
-func (a *App) networkLimitWithSettings(ctx context.Context, r *http.Request, settings domain.Settings) bool {
-	if a.Redis == nil {
-		return false
-	}
+func (a *App) clientIP(r *http.Request) string {
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	for _, cidr := range a.Config.TrustedProxyCIDRs {
 		_, network, err := net.ParseCIDR(cidr)
@@ -236,6 +232,13 @@ func (a *App) networkLimitWithSettings(ctx context.Context, r *http.Request, set
 			break
 		}
 	}
+	return host
+}
+func (a *App) networkLimitWithSettings(ctx context.Context, r *http.Request, settings domain.Settings) bool {
+	if a.Redis == nil {
+		return false
+	}
+	host := a.clientIP(r)
 	k := "flood:" + platform.Hash(host)
 	n, e := a.Redis.Incr(ctx, k).Result()
 	if e != nil {

@@ -33,6 +33,12 @@ func main() {
 	if e = s.Migrate(ctx, owner); e != nil {
 		log.Fatal(e)
 	}
+	if len(os.Args) > 1 {
+		if err := credentials(ctx, s, os.Args[1:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	opts, e := redis.ParseURL(env("REDIS_URL", "redis://127.0.0.1:56379"))
 	if e != nil {
 		log.Fatal(e)
@@ -40,7 +46,7 @@ func main() {
 	r := redis.NewClient(opts)
 	defer r.Close()
 	secure := env("APP_ENV", "production") != "development"
-	c := httpapi.Config{Role: env("APP_ROLE", "all"), PublicOrigin: env("PUBLIC_ORIGIN", "http://127.0.0.1:5173"), Owner: owner, Issuer: os.Getenv("OIDC_ISSUER"), ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"), RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), DevToken: os.Getenv("DEV_AUTH_TOKEN"), Secure: secure, TrustedProxyCIDRs: strings.FieldsFunc(os.Getenv("TRUSTED_PROXY_CIDRS"), func(r rune) bool { return r == ',' }), WebDir: env("WEB_DIR", "web/dist"), GraphDir: env("GRAPH_DIR", "artifacts/routing")}
+	c := httpapi.Config{Role: env("APP_ROLE", "all"), PublicOrigin: env("PUBLIC_ORIGIN", "http://127.0.0.1:5173"), Owner: owner, DevToken: os.Getenv("DEV_AUTH_TOKEN"), Secure: secure, TrustedProxyCIDRs: strings.FieldsFunc(os.Getenv("TRUSTED_PROXY_CIDRS"), func(r rune) bool { return r == ',' }), WebDir: env("WEB_DIR", "web/dist"), GraphDir: env("GRAPH_DIR", "artifacts/routing")}
 	if !secure {
 		c.DevelopmentOrigins = strings.FieldsFunc(env("DEV_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:8080,http://localhost:8080"), func(r rune) bool { return r == ',' })
 		for i := range c.DevelopmentOrigins {
@@ -58,8 +64,8 @@ func main() {
 			log.Fatal("invalid TRUSTED_PROXY_CIDRS")
 		}
 	}
-	if secure && (c.Issuer == "" || c.ClientID == "" || c.RedirectURL == "" || !strings.HasPrefix(c.PublicOrigin, "https://") || !strings.HasPrefix(c.RedirectURL, c.PublicOrigin+"/") || c.DevToken != "" || strings.HasSuffix(owner, ".test")) {
-		log.Fatal("production requires HTTPS origin/callback, OIDC issuer/client, a real owner email and no development token")
+	if secure && (!strings.HasPrefix(c.PublicOrigin, "https://") || c.DevToken != "" || strings.HasSuffix(owner, ".test")) {
+		log.Fatal("production requires an HTTPS origin, a real owner email and no development token")
 	}
 	a := httpapi.New(s, r, c)
 	if e = a.Start(ctx); e != nil {

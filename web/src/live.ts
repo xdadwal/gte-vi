@@ -56,7 +56,9 @@ export function useLive(cells: string[], overview = false) {
       for (const i of s.incidents) revisions.set(i.cell, i.revision);
       setSnapshot((old) => ({ ...s, overview: s.overview || old.overview }));
     };
-    const query = `cells=${encodeURIComponent(key)}`;
+    // Colons and commas are valid query characters. Keep other characters
+    // escaped, but avoid inflating 4096-cell subscriptions past proxy limits.
+    const query = `cells=${encodeURIComponent(key).replace(/%3A/g, ":").replace(/%2C/g, ",")}`;
     const pull = async () => {
       const epoch = streamEpoch;
       try {
