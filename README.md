@@ -50,8 +50,6 @@ The secure map is `https://192.168.1.2:8443`. Download `/dev-ca.cer` from the HT
 
 The CA lasts one year and server certificates last 30 days. Re-running the script preserves the CA and issues a certificate for the current LAN IP. Keys remain in ignored `artifacts/tls`; the Vite download route serves only the public CA certificate, only in development. Remove the test CA from your phone when finished. Simply bypassing a certificate warning does not establish a trusted HTTPS setup.
 
-For a preview containing synthetic reports, run the frontend with `VITE_MOCK_DATA=1` so the public map and operator console identify the hotspots as test data. Test ratings are illustrative and expire through the normal 30-minute report lifecycle. This flag labels the interface; it does not seed data or change report rules.
-
 ## Prepare the walking graph
 
 Download an OpenStreetMap PBF from [Geofabrik Northern Zone](https://download.geofabrik.de/asia/india/northern-zone.html), then:

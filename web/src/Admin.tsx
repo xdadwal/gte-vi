@@ -293,11 +293,7 @@ export function Admin() {
       <main id="admin-main" className="admin-main">
         <header className="admin-header">
           <div>
-            <p className="eyebrow">
-              {import.meta.env.VITE_MOCK_DATA === "1"
-                ? "DELHI NCT / MOCK HOTSPOTS"
-                : "DELHI NCT"}
-            </p>
+            <p className="eyebrow">DELHI NCT</p>
             <h1>{title}</h1>
           </div>
           <span className={`live-state ${fresh ? "healthy" : ""}`}>
