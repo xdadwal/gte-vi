@@ -131,7 +131,7 @@ LAUNCH
 chmod 700 /usr/local/bin/gte-launch
 cat > /etc/systemd/system/gte-launch.service <<'SERVICE'
 [Unit]
-Description=Start Grant Theft Elections from Secret Manager configuration
+Description=Start Grand Theft Elections from Secret Manager configuration
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

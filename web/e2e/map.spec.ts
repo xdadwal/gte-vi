@@ -111,10 +111,10 @@ test("responsive map and operator views have no page overflow", async ({
     await page.setViewportSize({ width, height });
     await page.goto("/");
     await expect(page).toHaveTitle(
-      "Grant Theft Elections — Delhi community map",
+      "Grand Theft Elections — Delhi community map",
     );
     await expect(
-      page.getByRole("link", { name: "Grant Theft Elections home" }),
+      page.getByRole("link", { name: "Grand Theft Elections home" }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Report", exact: true }),

@@ -118,9 +118,17 @@ run the same command for each approved email. Resetting a password revokes all
 sessions for that account. Passwords never belong in app configuration or command
 arguments. There is no public registration or email reset service.
 
-Create a Google-managed certificate for the domain, HTTPS target proxy and
-443 forwarding rule using the reserved address and `gte-web` URL map. Point DNS
-to that address and wait for certificate activation. The backend timeout is
+Create the Google-managed certificate, TLS 1.2+ HTTPS frontend, and permanent
+HTTP-to-HTTPS redirect using the reserved address and `gte-web` URL map:
+
+```sh
+python3 deploy/gcp/https.py --project=PROJECT_ID --domain=grandtheftelections.in
+```
+
+Set the apex (`@`) DNS A record to the reserved address, removing conflicting
+parking A records and any AAAA record that points elsewhere. Keep MX and TXT
+records intact. Wait for certificate activation; this script does not change
+registrar DNS. The backend timeout is
 3600 seconds because SSE is a long-running response, not a series of short
 requests. Clients must tolerate reconnects during timeout, maintenance and
 scale-down. Connection draining is 60 seconds; it is not unlimited stream

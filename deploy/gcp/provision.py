@@ -60,7 +60,7 @@ def main():
     ensure("load balancer firewall", ["compute", "firewall-rules", "describe", "gte-lb-web"],
            ["compute", "firewall-rules", "create", "gte-lb-web", "--network=gte", "--allow=tcp:8080", "--source-ranges=35.191.0.0/16,130.211.0.0/22", "--target-tags=gte-web"])
     ensure("container registry", ["artifacts", "repositories", "describe", "gte", f"--location={region}"],
-           ["artifacts", "repositories", "create", "gte", f"--location={region}", "--repository-format=docker", "--description=Grant Theft Elections release images"])
+           ["artifacts", "repositories", "create", "gte", f"--location={region}", "--repository-format=docker", "--description=Grand Theft Elections release images"])
     for suffix in ("routing", "backups", "builds"):
         bucket = f"gs://{project}-gte-{suffix}"
         ensure(f"{suffix} bucket", ["storage", "buckets", "describe", bucket],

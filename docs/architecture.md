@@ -1,4 +1,4 @@
-# Grant Theft Elections architecture and behavior
+# Grand Theft Elections architecture and behavior
 
 PRODUCT.md and DESIGN.md capture the product and interface principles. This document records the implemented architecture and default behavior; operator-adjustable values are described in [runtime settings](operations/runtime-settings.md).
 
