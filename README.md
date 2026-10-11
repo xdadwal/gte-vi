@@ -52,6 +52,8 @@ The importer clips to Delhi, excludes mapped access restrictions, conditional ac
 
 Retain every version referenced by a deployed manifest. Publish tiles before atomically switching the manifest; serve them through a CDN with compression. See [operations](docs/operations/runbook.md) and [measured scope](docs/operations/verification.md).
 
+For the initial GCP infrastructure and production setup, see [GCP deployment](docs/operations/gcp.md).
+
 ## Verify
 
 Integration tests clear a dedicated database whose name must end in `_test`:

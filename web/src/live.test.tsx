@@ -4,7 +4,7 @@ import { useLive, useLocation } from "./live";
 class Events extends EventTarget {
   static current: Events;
   onerror: (() => void) | null = null;
-  constructor() {
+  constructor(public url: string) {
     super();
     Events.current = this;
   }
@@ -21,6 +21,18 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+test("maximum cell subscription leaves room for load-balancer headers in SSE and polling", async () => {
+  const cells = Array.from({ length: 4096 }, (_, i) => `8000:${35000 + i}`);
+  renderHook(() => useLive(cells));
+  const stream = new URL(Events.current.url, "https://example.test");
+  expect(stream.searchParams.get("cells")?.split(",")).toEqual(cells);
+  expect(stream.pathname.length + stream.search.length).toBeLessThan(48 * 1024);
+  act(() => Events.current.onerror?.());
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  const poll = new URL(String(vi.mocked(fetch).mock.calls[0][0]), stream.origin);
+  expect(poll.searchParams.get("cells")?.split(",")).toEqual(cells);
+  expect(poll.pathname.length + poll.search.length).toBeLessThan(48 * 1024);
 });
 test("failed fallback remains stale until a successful snapshot", async () => {
   const { result } = renderHook(() => useLive(["1431:6334"]));
