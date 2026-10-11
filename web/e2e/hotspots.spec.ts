@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { ll, xy, REPORT_CELL_METERS } from "../src/model";
+import { DEFAULT_SETTINGS } from "../src/settings-values";
 import type { Incident } from "../src/model";
 
 test("severity hotspots retain star labels and pending state across viewports", async ({
@@ -38,6 +39,23 @@ test("severity hotspots retain star labels and pending state across viewports", 
       hotzone: { type: "Polygon", coordinates: [ring] },
     };
   });
+  const center = ll(
+    (originX + 2.5) * REPORT_CELL_METERS,
+    (originY + 1.5) * REPORT_CELL_METERS,
+  );
+  await page.route("**/api/v1/settings", (route) =>
+    route.fulfill({
+      json: {
+        revision: 100,
+        values: {
+          ...DEFAULT_SETTINGS,
+          mapLon: center[0],
+          mapLat: center[1],
+          mapZoom: 15.4,
+        },
+      },
+    }),
+  );
   await page.route("**/api/v1/snapshot?**", (route) =>
     route.fulfill({
       json: {
@@ -90,8 +108,12 @@ test("severity hotspots retain star labels and pending state across viewports", 
           ).size,
       ),
   ).toBe(6);
+  await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+  await expect(page.locator(".overview-label")).not.toHaveCount(0);
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect(page.locator(".overview-label")).toHaveCount(0);
   await page.waitForTimeout(1200);
   await page.screenshot({
     path: "../artifacts/screenshots/hotspots-desktop.png",

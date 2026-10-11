@@ -9,9 +9,12 @@ import type { Incident, Refuge, Fix, Overview } from "./model";
 import { ll, REPORT_CELL_METERS } from "./model";
 import { useSettings } from "./settings";
 import { hotspotFeatures, severityColor, severityExpression } from "./hotspots";
+import { groupMapLabels } from "./marker-layout";
 type Props = {
   incidents: Incident[];
   overview?: Overview[];
+  overviewMode?: boolean;
+  publicControls?: boolean;
   exitCoordinates?: [number, number][];
   refuges: Refuge[];
   fix?: Fix | null;
@@ -39,6 +42,11 @@ export function MapView(props: Props) {
     interacted = useRef(false),
     initialViewApplied = useRef(revision > 0),
     markers = useRef<maplibregl.Marker[]>([]);
+  const markerState = useRef<{
+    props: Props;
+    colors: string[];
+    layout: string;
+  } | null>(null);
   latest.current = props;
   function update() {
     const m = map.current;
@@ -116,57 +124,162 @@ export function MapView(props: Props) {
           ]
         : [],
     });
-    markers.current.forEach((m) => m.remove());
+    updateMarkers();
+  }
+  function updateMarkers() {
+    const m = map.current;
+    if (!m || !ready.current) return;
+    const p = latest.current;
+    const config = settingsRef.current;
+    const overviewMode = p.overviewMode ?? Boolean(p.overview?.length);
+    const projected = p.incidents.map((incident) => {
+      const [x, y] = incident.cell.split(":").map(Number);
+      const center = ll(
+        (x + 0.5) * REPORT_CELL_METERS,
+        (y + 0.5) * REPORT_CELL_METERS,
+      );
+      const point = m.project(center);
+      return { x: point.x, y: point.y, item: { incident, center } };
+    });
+    const incidentGroups = overviewMode ? [] : groupMapLabels(projected);
+    const overviewGroups = overviewMode
+      ? groupMapLabels(
+          (p.overview || []).map((cluster) => {
+            const point = m.project([cluster.lon, cluster.lat]);
+            return { x: point.x, y: point.y, item: cluster };
+          }),
+        )
+      : [];
+    const layout = JSON.stringify(
+      overviewMode
+        ? overviewGroups.map((group) => [
+            group.anchor.lon,
+            group.anchor.lat,
+            group.members,
+          ])
+        : incidentGroups.map((group) => [
+            group.anchor.incident.id,
+            group.members.map((member) => member.incident.id),
+          ]),
+    );
+    const previous = markerState.current;
+    if (
+      previous?.layout === layout &&
+      previous.props.incidents === p.incidents &&
+      (!overviewMode || previous.props.overview === p.overview) &&
+      previous.props.refuges === p.refuges &&
+      previous.props.entrance === p.entrance &&
+      previous.colors === config.starColors
+    )
+      return;
+    // MapLibre moves existing DOM markers itself. Rebuild only when grouping or
+    // marker data changes, preserving focus and avoiding churn during gestures.
+    markerState.current = { props: p, colors: config.starColors, layout };
+    markers.current.forEach((marker) => marker.remove());
     markers.current = [];
-    for (const cluster of p.overview || []) {
+    function addGroup(
+      count: number,
+      center: [number, number],
+      inspect: () => void,
+    ) {
       const button = document.createElement("button");
       button.className = "map-label overview-label";
-      button.textContent = String(cluster.count);
+      button.textContent = String(count);
       button.setAttribute(
         "aria-label",
-        `${cluster.count} reported areas. Zoom to inspect`,
+        `${count} reported areas. Zoom to inspect`,
       );
-      button.onclick = () =>
-        m.easeTo({ center: [cluster.lon, cluster.lat], zoom: 14 });
+      button.onclick = inspect;
       markers.current.push(
-        new maplibregl.Marker({ element: button })
-          .setLngLat([cluster.lon, cluster.lat])
-          .addTo(m),
+        new maplibregl.Marker({ element: button }).setLngLat(center).addTo(m!),
       );
     }
-    for (const i of p.incidents) {
-      const [x, y] = i.cell.split(":").map(Number),
-        button = document.createElement("button");
-      button.className =
-        "map-label " + (i.status === "pending" ? "pending" : "");
-      button.style.setProperty(
-        "--severity-color",
-        i.status === "pending"
-          ? "#8b8170"
-          : config.starColors[
-              Math.max(0, Math.min(4, Math.round(i.average) - 1))
-            ],
-      );
-      button.textContent =
-        i.status === "active" ? `${i.average.toFixed(1)} ★` : "Pending";
-      button.setAttribute(
-        "aria-label",
-        i.status === "active"
-          ? `Incident ${i.average.toFixed(1)} stars, ${i.count} reports`
-          : `Pending incident, ${i.count} reports`,
-      );
-      button.onclick = () => latest.current.onSelect?.([i]);
-      markers.current.push(
-        new maplibregl.Marker({ element: button })
-          .setLngLat(
-            ll(
-              x * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
-              y * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
+    function inspectGroup(
+      centers: [number, number][],
+      minimumZoom: number,
+      anchor: [number, number],
+    ) {
+      if (centers.length === 1) {
+        m!.easeTo({ center: centers[0], zoom: minimumZoom });
+        return;
+      }
+      const bounds = new maplibregl.LngLatBounds();
+      centers.forEach((center) => bounds.extend(center));
+      const desktop = m!.getContainer().clientWidth >= 768;
+      const camera = m!.cameraForBounds(bounds, {
+        padding: p.publicControls
+          ? {
+              top: 120,
+              right: 64,
+              bottom: desktop ? 64 : 280,
+              left: desktop ? 400 : 64,
+            }
+          : 64,
+        maxZoom: 19,
+      });
+      if (camera && (camera.zoom || 0) >= minimumZoom) {
+        m!.easeTo(camera);
+      } else {
+        // A long connected chain cannot always fit at a closer zoom. Inspect
+        // progressively around the tapped badge, rather than overriding a
+        // fitted camera and unexpectedly shifting its members under controls.
+        m!.easeTo({
+          center: anchor,
+          zoom: Math.min(m!.getMaxZoom(), minimumZoom),
+        });
+      }
+    }
+    if (overviewMode) {
+      for (const group of overviewGroups) {
+        addGroup(
+          group.members.reduce((sum, cluster) => sum + cluster.count, 0),
+          [group.anchor.lon, group.anchor.lat],
+          () =>
+            inspectGroup(
+              group.members.map((cluster) => [cluster.lon, cluster.lat]),
+              Math.max(14, m.getZoom() + 1),
+              [group.anchor.lon, group.anchor.lat],
             ),
-          )
-          .addTo(m),
-      );
+        );
+      }
     }
+    if (!overviewMode)
+      for (const group of incidentGroups) {
+        const { incident: i, center } = group.anchor;
+        if (group.members.length > 1) {
+          addGroup(group.members.length, center, () => {
+            inspectGroup(
+              group.members.map((member) => member.center),
+              m.getZoom() + 1,
+              center,
+            );
+          });
+          continue;
+        }
+        const button = document.createElement("button");
+        button.className =
+          "map-label " + (i.status === "pending" ? "pending" : "");
+        button.style.setProperty(
+          "--severity-color",
+          i.status === "pending"
+            ? "#8b8170"
+            : config.starColors[
+                Math.max(0, Math.min(4, Math.round(i.average) - 1))
+              ],
+        );
+        button.textContent =
+          i.status === "active" ? `${i.average.toFixed(1)} ★` : "Pending";
+        button.setAttribute(
+          "aria-label",
+          i.status === "active"
+            ? `Incident ${i.average.toFixed(1)} stars, ${i.count} reports`
+            : `Pending incident, ${i.count} reports`,
+        );
+        button.onclick = () => latest.current.onSelect?.([i]);
+        markers.current.push(
+          new maplibregl.Marker({ element: button }).setLngLat(center).addTo(m),
+        );
+      }
     for (const r of p.refuges) {
       const button = document.createElement("button");
       button.className = "refuge-marker";
@@ -282,6 +395,16 @@ export function MapView(props: Props) {
         b.getNorth(),
       ]);
     };
+    let markerFrame = 0;
+    const refreshMarkers = () => {
+      if (markerFrame) return;
+      markerFrame = requestAnimationFrame(() => {
+        markerFrame = 0;
+        updateMarkers();
+      });
+    };
+    m.on("move", refreshMarkers);
+    m.on("resize", refreshMarkers);
     m.on("moveend", bounds);
     m.on("movestart", (event) => {
       if (event.originalEvent) interacted.current = true;
@@ -300,6 +423,8 @@ export function MapView(props: Props) {
         latest.current.onEntrance([e.lngLat.lng, e.lngLat.lat]);
     });
     return () => {
+      cancelAnimationFrame(markerFrame);
+      markerState.current = null;
       markers.current.forEach((m) => m.remove());
       ready.current = false;
       m.remove();
@@ -309,7 +434,8 @@ export function MapView(props: Props) {
   useEffect(update, [
     config,
     props.incidents,
-    props.overview,
+    props.overviewMode === false ? undefined : props.overview,
+    props.overviewMode,
     props.exitCoordinates,
     props.refuges,
     props.fix,
@@ -353,7 +479,7 @@ export function MapView(props: Props) {
           x * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
           y * REPORT_CELL_METERS + REPORT_CELL_METERS / 2,
         ),
-        zoom: 14,
+        zoom: Math.max(14, map.current?.getZoom() || 0),
       });
     }
   }, [props.selected?.id]);
