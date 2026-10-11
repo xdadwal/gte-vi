@@ -111,6 +111,9 @@ docker pull "$image" >/dev/null
 docker pull gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.26.0 >/dev/null
 if [ "$role" = gateway ]; then
   gcloud storage rsync --recursive "$bucket" /var/lib/gte/routing >/dev/null
+  # Routing artifacts are public data, unlike the protected runtime secrets.
+  # rsync inherits umask 077; the unprivileged app needs read/traverse access.
+  chmod -R a+rX /var/lib/gte/routing
   test -s /var/lib/gte/routing/manifest.json
 fi
 docker rm -f gte-sql gte-app >/dev/null 2>&1 || true
