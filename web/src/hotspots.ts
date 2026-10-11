@@ -42,7 +42,12 @@ export function hotspotFeatures(
         const scale = 1 - index / 16;
         return {
           type: "Feature",
-          properties: { average: incident.average, status: incident.status },
+          properties: {
+            average: incident.average,
+            status: incident.status,
+            // Almost transparent at the edge, with a stronger readable core.
+            opacityWeight: 0.12 + 3.08 * Math.pow(index / 15, 0.8),
+          },
           geometry: {
             type: "Polygon",
             coordinates: incident.hotzone.coordinates.map((ring) =>

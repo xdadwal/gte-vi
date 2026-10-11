@@ -18,6 +18,10 @@ Runtime settings verification: Go race tests and vet passed with dedicated PostG
 
 Go race tests and vet passed with dedicated PostGIS/Redis services; all 36 frontend tests and the production build passed. Tests cover adjacent 250 m subcells, measured 250 x 250 m public geometry, preserved legacy archives through expiry cleanup, idempotent migration, original and orphaned receipt invalidation, maximum-radius subscription coverage, and routing tile lookup independent of the reporting grid. The local database migration archived nine legacy incidents and two retained contributions. A 4,096-cell encoded snapshot request (61,481-byte URL) returned HTTP 200. All six HTTPS browser journeys passed, including hotspot star labels, mobile reporting, responsive/accessibility checks, real walking routes, and live settings propagation. The hotspot assertion now allows 15 seconds for cold external basemap readiness; the initial 5-second limit timed out before successful glyph requests completed. Independent review found a legacy receipt gap; the fix and scoped re-review passed. No capacity load test was rerun for the smaller grid.
 
+## Hotspot visibility and rating guidance
+
+Zone outlines are removed. Six local HTTPS browser journeys passed with stronger gradient cores, including all five selected-rating descriptions and the unchanged hold-to-submit flow. A subsequent hotspot check passed after the final paint adjustment, verifying that clicking the invisible zone footprint still opens incident details. All 36 frontend tests and the production build passed. Desktop/mobile hotspot and mobile rating screenshots were visually inspected. Hotspot screenshots use isolated browser fixtures; no incident data was seeded for this UI change. Existing 250 m geometry, severity buffers, alert rules and persisted opacity settings remain unchanged. No new capacity benchmark was run.
+
 ## Local load measurements (original 500 m reporting grid)
 
 | Workload | Measured scope | Result |

@@ -7,7 +7,7 @@ Delhi NCT only. Anonymous browser sessions. Fixed 250m square EPSG:32643 cells g
 
 Alert radius500–3000m/500m, default1000m, measured from hotzone edge. Foreground only. First entry/activation and >=1-star escalation; 5m cooldown, 60s outside rearm. In-app banners, sound optional/off by default, no focus stealing. No-current-reports copy never implies safety.
 
-Report → choose1–5 stars → hold3s, no descriptions/preselection/confirmation. Release/drag-away/blur cancels. Idempotent submit, server acknowledgement before success, retry preserves stars. Browsing without location; Locate/Report/Find refuge asks permission.
+Report → choose1–5 stars → hold3s, brief selected-rating guidance, no preselection/extra confirmation. Release/drag-away/blur cancels. Idempotent submit, server acknowledgement before success, retry preserves stars. Browsing without location; Locate/Report/Find refuge asks permission.
 
 ## Live state
 Zone-based single SSE connection/tab and snapshots. Client proximity and cooldowns. Snapshot-buffer handoff, revisions, removes, heartbeat15s, stale45s. Poll10s+jitter, reconnect backoff, refresh on zones/resume. Detailed subscriptions max4096cells, overview aggregates. Hidden tab closes stream. Redis failure forces resnapshot; transactional database outbox preserves reports.

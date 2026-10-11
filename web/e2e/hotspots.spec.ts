@@ -101,5 +101,17 @@ test("severity hotspots retain star labels and pending state across viewports", 
   await page.screenshot({
     path: "../artifacts/screenshots/hotspots-mobile.png",
   });
+  // The invisible footprint remains selectable away from the star marker.
+  const marker = await page
+    .getByRole("button", { name: "Incident 5.0 stars, 5 reports", exact: true })
+    .boundingBox();
+  expect(marker).not.toBeNull();
+  await page.mouse.click(
+    marker!.x + marker!.width / 2,
+    marker!.y + marker!.height + 12,
+  );
+  await expect(
+    page.getByRole("heading", { name: "Reported area", exact: true }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });

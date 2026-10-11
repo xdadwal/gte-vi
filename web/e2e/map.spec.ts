@@ -11,7 +11,29 @@ test("anonymous mobile report holds, cancels and confirms server acknowledgement
   const page = await context.newPage();
   await page.goto("/");
   await page.getByRole("button", { name: "Report", exact: true }).click();
+  await expect(page.locator("#rating-description")).toHaveText(
+    "Select a star rating to see its meaning.",
+  );
+  for (const [index, description] of [
+    "Checkposts with fewer than 5 personnel.",
+    "Active personnel.",
+    "Detention ongoing.",
+    "Manhandling and higher personnel count.",
+    "Full-blown violence.",
+  ].entries()) {
+    const n = index + 1;
+    const rating = page.getByRole("button", {
+      name: `${n} star${n > 1 ? "s" : ""}`,
+      exact: true,
+    });
+    await rating.click();
+    await expect(rating).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#rating-description")).toHaveText(description);
+  }
   await page.getByRole("button", { name: "3 stars", exact: true }).click();
+  await page.screenshot({
+    path: "../artifacts/screenshots/mobile-rating-description.png",
+  });
   const hold = page.getByRole("button", { name: "Hold 3s to report" });
   await expect(hold).toBeEnabled();
   await hold.focus();

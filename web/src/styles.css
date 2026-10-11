@@ -391,6 +391,13 @@ time {
 .stars button:hover {
   background: var(--surface);
 }
+.rating-description {
+  min-height: 3em;
+  margin-block: 0.75rem;
+  color: var(--ink);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
 .hold-button {
   position: relative;
   overflow: hidden;

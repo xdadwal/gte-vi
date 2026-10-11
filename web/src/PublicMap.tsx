@@ -37,6 +37,13 @@ import {
   type RoutingEngine,
   type WalkingRoute,
 } from "./routing-engine";
+const STAR_DESCRIPTIONS = [
+  "Checkposts with fewer than 5 personnel.",
+  "Active personnel.",
+  "Detention ongoing.",
+  "Manhandling and higher personnel count.",
+  "Full-blown violence.",
+];
 function initialExit(route: WalkingRoute): [number, number][] {
   if (route.insideDistance <= 0) return [];
   const result: [number, number][] = [route.coordinates[0]];
@@ -591,6 +598,9 @@ export function PublicMap() {
                   type="button"
                   aria-label={`${n} star${n > 1 ? "s" : ""}`}
                   aria-pressed={stars === n}
+                  aria-describedby={
+                    stars === n ? "rating-description" : undefined
+                  }
                   disabled={sending}
                   onClick={() => {
                     setStars(n);
@@ -605,6 +615,16 @@ export function PublicMap() {
                 </button>
               ))}
             </fieldset>
+            <p
+              id="rating-description"
+              className="rating-description"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {stars
+                ? STAR_DESCRIPTIONS[stars - 1]
+                : "Select a star rating to see its meaning."}
+            </p>
             <p className="small-copy">
               {location.fix
                 ? `Current location · accuracy ${Math.round(location.fix.accuracy)} m`

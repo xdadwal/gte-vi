@@ -46,15 +46,20 @@ export function MapView(props: Props) {
     const p = latest.current;
     const config = settingsRef.current;
     const color = severityExpression(config.starColors);
-    for (const layer of ["incident-hotspots", "incident-fill"])
-      m.setPaintProperty(layer, "fill-color", color);
-    for (const layer of ["active-outline", "pending-outline"])
-      m.setPaintProperty(layer, "line-color", color);
+    m.setPaintProperty("incident-hotspots", "fill-color", color);
     m.setPaintProperty("incident-hotspots", "fill-opacity", [
-      "case",
-      ["==", ["get", "status"], "pending"],
-      config.hotspotPendingOpacity,
-      config.hotspotActiveOpacity,
+      "min",
+      1,
+      [
+        "*",
+        ["get", "opacityWeight"],
+        [
+          "case",
+          ["==", ["get", "status"], "pending"],
+          config.hotspotPendingOpacity,
+          config.hotspotActiveOpacity,
+        ],
+      ],
     ]);
     const collection = {
       type: "FeatureCollection",
@@ -218,12 +223,7 @@ export function MapView(props: Props) {
         source: "hotspots",
         paint: {
           "fill-color": severityColor,
-          "fill-opacity": [
-            "case",
-            ["==", ["get", "status"], "pending"],
-            0.023,
-            0.045,
-          ],
+          "fill-opacity": 0,
           "fill-antialias": false,
         },
       });
@@ -233,30 +233,8 @@ export function MapView(props: Props) {
         source: "incidents",
         paint: {
           "fill-color": severityColor,
-          "fill-opacity": 0.025,
-        },
-      });
-      m.addLayer({
-        id: "active-outline",
-        type: "line",
-        source: "incidents",
-        filter: ["==", ["get", "status"], "active"],
-        paint: {
-          "line-color": severityColor,
-          "line-width": 1,
-          "line-opacity": 0.65,
-        },
-      });
-      m.addLayer({
-        id: "pending-outline",
-        type: "line",
-        source: "incidents",
-        filter: ["==", ["get", "status"], "pending"],
-        paint: {
-          "line-color": severityColor,
-          "line-width": 1,
-          "line-opacity": 0.65,
-          "line-dasharray": [3, 2],
+          // Keep the complete footprint clickable without a visible boundary.
+          "fill-opacity": 0,
         },
       });
       m.addLayer({
