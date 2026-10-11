@@ -44,6 +44,7 @@ export function useLive(cells: string[], overview = false) {
       last = 0,
       delay = configRef.current.reconnectMinSeconds * 1000,
       streamEpoch = 0,
+      overviewRequest = 0,
       refugePull = 0,
       nextPull = 0,
       retryStarted = 0,
@@ -53,6 +54,7 @@ export function useLive(cells: string[], overview = false) {
     const apply = (s: Snapshot) => {
       if (!valid()) return;
       applySettings(s.settings);
+      if (s.overview) ++overviewRequest;
       last = Date.now();
       loadedKey.current = key;
       revisions.clear();
@@ -203,6 +205,7 @@ export function useLive(cells: string[], overview = false) {
       source?.close();
       source = undefined;
       ++streamEpoch;
+      ++overviewRequest;
       if (poll) clearInterval(poll);
       poll = undefined;
       if (retry) clearTimeout(retry);
@@ -254,13 +257,15 @@ export function useLive(cells: string[], overview = false) {
         last = 0;
         setState("connecting");
         connect();
+        void refreshOverview();
       }
     };
     const refreshOverview = async () => {
-      if (!overview || !valid() || document.hidden) return;
+      if (!overview || !valid() || document.hidden || refreshRequest) return;
+      const request = ++overviewRequest;
       try {
         const s = await api<Snapshot>("snapshot?overview=true");
-        if (valid()) {
+        if (valid() && request === overviewRequest) {
           applySettings(s.settings);
           setSnapshot((old) => ({ ...old, overview: s.overview }));
         }
@@ -271,6 +276,18 @@ export function useLive(cells: string[], overview = false) {
     if (overview) void refreshOverview();
     let lastOverview = Date.now();
     const overviewTimer = setInterval(() => {
+      // Remove expired display-only incidents even if the next poll is offline.
+      // Preserve the array identity otherwise, avoiding marker rebuilds each tick.
+      setSnapshot((old) =>
+        old.overview?.some((i) => Date.parse(i.expiresAt) <= Date.now())
+          ? {
+              ...old,
+              overview: old.overview.filter(
+                (i) => Date.parse(i.expiresAt) > Date.now(),
+              ),
+            }
+          : old,
+      );
       if (
         Date.now() - lastOverview >=
         configRef.current.overviewRefreshSeconds * 1000

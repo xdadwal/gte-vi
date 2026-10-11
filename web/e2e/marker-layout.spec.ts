@@ -69,26 +69,23 @@ async function fixtures(
       },
     }),
   );
-  const snapshot = {
-    incidents: areas,
-    refuges: [],
-    serverTime: new Date().toISOString(),
+  const snapshotFor = (url: string) => {
+    const query = new URL(url).searchParams;
+    const cells = new Set((query.get("cells") || "").split(","));
+    return {
+      incidents: areas.filter((area) => cells.has(area.cell)),
+      refuges: [],
+      serverTime: new Date().toISOString(),
+      ...(query.get("overview") === "true" ? { overview: areas } : {}),
+    };
   };
   await page.route("**/api/v1/snapshot?**", (route) =>
-    route.fulfill({
-      json: {
-        ...snapshot,
-        overview:
-          new URL(route.request().url()).searchParams.get("overview") === "true"
-            ? [{ lon: center[0], lat: center[1], count: 12 }]
-            : [],
-      },
-    }),
+    route.fulfill({ json: snapshotFor(route.request().url()) }),
   );
   await page.route("**/api/v1/events?**", (route) =>
     route.fulfill({
       contentType: "text/event-stream",
-      body: `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`,
+      body: `event: snapshot\ndata: ${JSON.stringify(snapshotFor(route.request().url()))}\n\n`,
     }),
   );
 }
@@ -151,27 +148,51 @@ for (const width of [320, 390, 768, 1440])
     ).toBeVisible();
   });
 
-test("wide zoom retains loaded individual labels instead of overview counts", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await fixtures(page, 9);
-  await page.goto("/");
-  await expect(page.locator(".map-label")).toHaveCount(3);
-  await expect(page.locator(".overview-label")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", {
-      name: "Pending incident, 8 reports",
-      exact: true,
-    }),
-  ).toBeAttached();
-  await expect(
-    page.getByRole("button", {
-      name: "Incident 5.0 stars, 8 reports",
-      exact: true,
-    }),
-  ).toBeAttached();
-});
+for (const width of [390, 1440])
+  for (const zoom of [0, 5, 9, 11])
+    test(`wide zoom ${zoom} at ${width}px loads individual ratings without location or count badges`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await fixtures(page, zoom);
+      await page.goto("/");
+      const badge = page.getByRole("button", {
+        name: "Incident 5.0 stars, 8 reports",
+        exact: true,
+      });
+      await expect(badge).toBeVisible();
+      await expect(
+        page.getByRole("button", {
+          name: "Pending incident, 8 reports",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await expect(page.locator(".map-label")).toHaveCount(3);
+      await expect(page.locator(".overview-label")).toHaveCount(0);
+      await badge.focus();
+      const handle = await badge.elementHandle();
+      await page.waitForTimeout(1200);
+      expect(
+        await handle!.evaluate(
+          (element) =>
+            element.isConnected && document.activeElement === element,
+        ),
+      ).toBe(true);
+      await expect(
+        page.getByText("3 reported areas on this map", { exact: true }),
+      ).toBeVisible();
+      await badge.click();
+      await expect(
+        page.getByRole("heading", { name: "5.0 ★", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("This incident has expired or been removed."),
+      ).toHaveCount(0);
+      if (zoom === 9)
+        await page.screenshot({
+          path: `../artifacts/screenshots/wide-stars-${width}.png`,
+        });
+    });
 
 test("dense areas retain every rating without a count badge", async ({
   page,
@@ -184,7 +205,7 @@ test("dense areas retain every rating without a count badge", async ({
   await expect(page.locator(".overview-label")).toHaveCount(0);
 });
 
-test("public map automatically centers and follows location after panning", async ({
+test("public map pauses location following while exploring and resumes with Locate me", async ({
   page,
   context,
 }) => {
@@ -222,7 +243,7 @@ test("public map automatically centers and follows location after panning", asyn
       : Infinity;
   };
   await expect.poll(horizontalOffset).toBeLessThan(3);
-  // A user pan must not disable automatic following on the next GPS update.
+  // Exploring should pause follow, so GPS updates do not pull the map back.
   await page.mouse.move(195, 350);
   await page.mouse.down();
   await page.mouse.move(295, 350, { steps: 10 });
@@ -234,8 +255,11 @@ test("public map automatically centers and follows location after panning", asyn
     latitude: center[1],
     accuracy: 8,
   });
-  await expect.poll(horizontalOffset).toBeLessThan(3);
+  await page.waitForTimeout(500);
+  expect(await horizontalOffset()).toBeGreaterThan(40);
   await page.getByRole("button", { name: "Ack", exact: true }).click();
+  await page.getByRole("button", { name: "Locate me", exact: true }).click();
+  await expect.poll(horizontalOffset).toBeLessThan(3);
   await page.getByRole("button", { name: "Zoom out", exact: true }).click();
   const visualBadge = badge.locator(".map-badge");
   await expect

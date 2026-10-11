@@ -33,10 +33,9 @@ export type Refuge = {
   closed: boolean;
   revision: number;
 };
-export type Overview = { lon: number; lat: number; count: number };
 export type Snapshot = {
   settings?: SettingsEnvelope;
-  overview?: Overview[];
+  overview?: Incident[];
   revisions?: Record<string, number>;
   incidents: Incident[];
   refuges: Refuge[];

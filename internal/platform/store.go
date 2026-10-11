@@ -257,7 +257,7 @@ func (s *Store) Snapshot(ctx context.Context, cells []string, overview bool) (ma
 	}
 	overviewItems := []json.RawMessage{}
 	if overview {
-		rows, e = tx.Query(ctx, `SELECT json_build_object('lon',ST_X(p),'lat',ST_Y(p),'count',n) FROM (SELECT ST_Transform(ST_SetSRID(ST_MakePoint((floor(x/8.0)+0.5)*2000,(floor(y/8.0)+0.5)*2000),32643),4326) p,count(*) n FROM incidents WHERE status<>'empty' GROUP BY floor(x/8.0),floor(y/8.0)) clusters`)
+		rows, e = tx.Query(ctx, `SELECT incident_json(i) FROM incidents i WHERE status<>'empty' ORDER BY cell`)
 		if e != nil {
 			return nil, e
 		}
@@ -275,7 +275,13 @@ func (s *Store) Snapshot(ctx context.Context, cells []string, overview bool) (ma
 			return nil, e
 		}
 	}
-	return map[string]any{"incidents": inc, "refuges": refuges, "overview": overviewItems, "revisions": revisions, "serverTime": time.Now().UTC(), "settings": settings}, tx.Commit(ctx)
+	result := map[string]any{"incidents": inc, "refuges": refuges, "revisions": revisions, "serverTime": time.Now().UTC(), "settings": settings}
+	// SSE snapshots contain only subscribed cells; do not erase a separately
+	// polled city overview when handing over to the live stream.
+	if overview {
+		result["overview"] = overviewItems
+	}
+	return result, tx.Commit(ctx)
 }
 func (s *Store) Expire(ctx context.Context) error {
 	tx, e := s.DB.Begin(ctx)
