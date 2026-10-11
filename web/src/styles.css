@@ -427,7 +427,7 @@ time {
 }
 .alert-banner {
   position: absolute;
-  top: 94px;
+  top: 112px;
   left: 16px;
   right: 16px;
   z-index: 40;
@@ -441,7 +441,16 @@ time {
   box-shadow: var(--shadow);
   font-size: 0.875rem;
 }
-.alert-banner > button {
+.alert-banner > span {
+  min-width: 0;
+}
+.alert-banner > .alert-ack {
+  flex-shrink: 0;
+  padding: 0.5rem 0.85rem;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 700;
   margin-left: auto;
   min-width: 44px;
   min-height: 44px;

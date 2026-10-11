@@ -1,3 +1,4 @@
+import { AlertSound } from "./alert-sound";
 import { Brand } from "./Brand";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -5,7 +6,6 @@ import {
   HouseIcon,
   CrosshairIcon,
   ArrowLeftIcon,
-  XIcon,
   SpeakerHighIcon,
   GearIcon,
   ArrowRightIcon,
@@ -102,6 +102,26 @@ export function PublicMap() {
     [affected, setAffected] = useState(false),
     [calculating, setCalculating] = useState(false),
     [now, setNow] = useState(Date.now());
+  const alertSound = useRef<AlertSound | null>(null);
+  if (!alertSound.current) alertSound.current = new AlertSound();
+  useEffect(() => {
+    const unlock = () => {
+      if (sound) alertSound.current?.unlock();
+    };
+    const visibility = () => {
+      if (document.hidden) alertSound.current?.stop();
+    };
+    if (!sound) alertSound.current?.dispose();
+    document.addEventListener("pointerdown", unlock);
+    document.addEventListener("keydown", unlock);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      document.removeEventListener("pointerdown", unlock);
+      document.removeEventListener("keydown", unlock);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [sound]);
+  useEffect(() => () => alertSound.current?.dispose(), []);
   const points = location.fix ? xy(location.fix.lon, location.fix.lat) : null;
   const viewCells = useMemo(() => cellsInBounds(...bounds), [bounds]);
   const cells = useMemo(() => {
@@ -198,6 +218,7 @@ export function PublicMap() {
       return;
     const stored = preference<Record<string, AlertMemory>>("gte-alerts", {});
     Object.assign(memory.current, stored);
+    let notifySound = false;
     for (const i of incidents) {
       const a = alertFor(
         i,
@@ -212,20 +233,10 @@ export function PublicMap() {
         setBanner(
           `${i.average.toFixed(1)} stars reported nearby · ${i.count} fresh reports`,
         );
-        if (sound) {
-          const ctx = new AudioContext(),
-            o = ctx.createOscillator(),
-            g = ctx.createGain();
-          o.connect(g);
-          g.connect(ctx.destination);
-          g.gain.value = 0.08;
-          o.frequency.value = 560;
-          o.start();
-          o.stop(ctx.currentTime + 0.18);
-          o.onended = () => ctx.close();
-        }
+        notifySound = true;
       }
     }
+    if (sound && notifySound) alertSound.current?.play();
     const alive = new Set(incidents.map((i) => i.id));
     for (const id of Object.keys(memory.current)) {
       if (!alive.has(id)) delete memory.current[id];
@@ -499,8 +510,15 @@ export function PublicMap() {
       {banner && (
         <div className="alert-banner" role="status">
           <span>{banner}</span>
-          <button aria-label="Dismiss alert" onClick={() => setBanner("")}>
-            <XIcon size={20} />
+          <button
+            className="alert-ack"
+            title="Acknowledge alert and stop sound"
+            onClick={() => {
+              alertSound.current?.stop();
+              setBanner("");
+            }}
+          >
+            Ack
           </button>
         </div>
       )}
@@ -758,7 +776,11 @@ export function PublicMap() {
               <input
                 type="checkbox"
                 checked={sound}
-                onChange={(e) => setSound(e.target.checked)}
+                onChange={(e) => {
+                  if (e.target.checked) alertSound.current?.unlock();
+                  else alertSound.current?.dispose();
+                  setSound(e.target.checked);
+                }}
               />
               <SpeakerHighIcon size={22} />
               Sound for nearby alerts

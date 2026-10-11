@@ -5,7 +5,7 @@ The approved conversation and the implementation plan are the product authority.
 ## Public map
 Delhi NCT only. Anonymous browser sessions. Fixed 250m square EPSG:32643 cells group reports and define public base geometry. Current GPS report fix <=30s old, accuracy <=100m. Exact coordinates discarded after grid lookup; never logged. One integer 1–5 rating/session/cell, replacement refreshes 30m expiry. 1–4 fresh sessions pending; >=5 active, latest 50 fresh session ratings determine average. Empty cells disappear; fresh reports start new episodes. Buffers: pending100m, active100m × unrounded average. Overlapping cells remain separate.
 
-Alert radius500–3000m/500m, default1000m, measured from hotzone edge. Foreground only. First entry/activation and >=1-star escalation; 5m cooldown, 60s outside rearm. In-app banners, sound optional/off by default, no focus stealing. No-current-reports copy never implies safety.
+Alert radius500–3000m/500m, default1000m, measured from hotzone edge. Foreground only. First entry/activation and >=1-star escalation; 5m cooldown, 60s outside rearm. In-app banners, sound optional/off by default, no focus stealing. Enabled sound uses a louder 12s alternating pulse; a visible Ack button stops it and dismisses the toast. Sound also stops on opt-out, hidden tab or map unmount; the toast stays until Ack. No-current-reports copy never implies safety.
 
 Report → choose1–5 stars → hold3s, brief selected-rating guidance, no preselection/extra confirmation. Release/drag-away/blur cancels. Idempotent submit, server acknowledgement before success, retry preserves stars. Browsing without location; Locate/Report/Find refuge asks permission.
 

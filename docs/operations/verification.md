@@ -26,6 +26,10 @@ Zone outlines are removed. Six local HTTPS browser journeys passed with stronger
 
 The app title, public map, admin sign-in and operator navigation use the renamed project and one shared original typographic wordmark. The VI lockup is removed. All 36 frontend tests, production build and six local HTTPS browser journeys passed, including renamed title/home-link assertions and responsive/accessibility checks. A separate 320 px preview had no page overflow; its wordmark and admin sign-in were visually inspected. Current documentation screenshots were refreshed. No backend behavior or deployment capacity was changed.
 
+## Audible alerts and acknowledgement
+
+All 41 frontend tests and the production build passed. Audio coverage includes 12-second scheduling, higher pulse gain, immediate/idempotent cancellation, replacement, natural completion cleanup, disposal and avoiding delayed playback when autoplay is blocked. All seven local HTTPS browser journeys passed, including native Web Audio instrumentation confirming sustained playback and early cancellation by the visible Ack button. The mobile toast was visually inspected; the new alert browser journey is included in CI. These checks verify browser audio scheduling and gain, not physical speaker loudness. No capacity measurements were rerun.
+
 ## Local load measurements (original 500 m reporting grid)
 
 | Workload | Measured scope | Result |
