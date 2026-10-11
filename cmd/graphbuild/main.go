@@ -43,7 +43,7 @@ type Tile struct {
 
 func footAccess(t map[string]string) bool {
 	h := t["highway"]
-	if h == "" || t["foot:conditional"] != "" || t["access:conditional"] != "" || t["opening_hours"] != "" {
+	if h == "" || (t["oneway:foot"] != "" && t["oneway:foot"] != "no") || t["oneway:foot:conditional"] != "" || t["foot:conditional"] != "" || t["access:conditional"] != "" || t["opening_hours"] != "" {
 		return false
 	}
 	if h == "motorway" || h == "motorway_link" || h == "construction" || h == "proposed" || h == "raceway" {
@@ -118,12 +118,13 @@ func build(source, out string) error {
 	}
 	scanner := osmpbf.New(context.Background(), f, runtime.NumCPU())
 	defer scanner.Close()
-	scanner.SkipRelations = true
+	scanner.SkipRelations = false
 	scanner.FilterNode = func(n *osm.Node) bool { return n.Lon > 76.8 && n.Lon < 77.5 && n.Lat > 28.35 && n.Lat < 29.0 }
 	scanner.FilterWay = func(w *osm.Way) bool { return footAccess(w.Tags.Map()) }
 	nodes := map[osm.NodeID]Node{}
 	blocked := map[osm.NodeID]bool{}
 	edges := []Edge{}
+	restrictedWays := map[string]bool{}
 	for scanner.Scan() {
 		switch o := scanner.Object().(type) {
 		case *osm.Node:
@@ -132,12 +133,21 @@ func build(source, out string) error {
 				continue
 			}
 			barrier := tags["barrier"]
-			if tags["foot"] == "no" || tags["access"] == "no" || tags["locked"] == "yes" || (barrier != "" && barrier != "entrance" && barrier != "kerb" && barrier != "bollard" && barrier != "cycle_barrier" && tags["foot"] != "yes") {
+			if tags["foot:conditional"] != "" || tags["access:conditional"] != "" || tags["opening_hours"] != "" || tags["access"] == "private" || tags["foot"] == "private" || tags["foot"] == "no" || tags["access"] == "no" || tags["locked"] == "yes" || (barrier != "" && barrier != "entrance" && barrier != "kerb" && barrier != "bollard" && barrier != "cycle_barrier" && tags["foot"] != "yes") {
 				blocked[o.ID] = true
 				continue
 			}
 			x, y := project(o.Lon, o.Lat)
 			nodes[o.ID] = Node{ID: strconv.FormatInt(int64(o.ID), 10), X: math.Round(x*100) / 100, Y: math.Round(y*100) / 100, Lon: o.Lon, Lat: o.Lat}
+		case *osm.Relation:
+			tags := o.Tags.Map()
+			if tags["type"] == "restriction" && (tags["restriction:foot"] != "" || tags["restriction:foot:conditional"] != "") {
+				for _, m := range o.Members {
+					if m.Type == osm.TypeWay {
+						restrictedWays[strconv.FormatInt(m.Ref, 10)] = true
+					}
+				}
+			}
 		case *osm.Way:
 			for i := 1; i < len(o.Nodes); i++ {
 				a, ok := nodes[o.Nodes[i-1].ID]
@@ -166,6 +176,13 @@ func build(source, out string) error {
 	if e = scanner.Err(); e != nil {
 		return e
 	}
+	allowedEdges := edges[:0]
+	for _, edge := range edges {
+		if !restrictedWays[strings.SplitN(edge.ID, ":", 2)[0]] {
+			allowedEdges = append(allowedEdges, edge)
+		}
+	}
+	edges = allowedEdges
 	tiles := map[string]*Tile{}
 	all := map[string]Node{}
 	for _, n := range nodes {

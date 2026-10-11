@@ -193,7 +193,7 @@ func (s *Store) AdminData(ctx context.Context, kind string) ([]json.RawMessage, 
 		"refuges":   `SELECT jsonb_build_object('id',id,'name',name,'lon',lon,'lat',lat,'instructions',instructions,'hours',hours,'exceptions',exceptions,'hostContact',host_contact,'confirmationNote',confirmation_note,'confirmedAt',confirmed_at,'publication',publication,'closed',closed,'revision',revision) FROM refuges ORDER BY name`,
 		"activity":  `SELECT to_jsonb(a) FROM (SELECT * FROM audit ORDER BY id DESC LIMIT 500) a`,
 		"team":      `SELECT jsonb_build_object('email',email,'role',role,'enabled',enabled) FROM admins ORDER BY email`,
-		"incidents": `SELECT incident_json(i)||jsonb_build_object('reports',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'stars',r.stars,'updatedAt',r.updated_at,'expiresAt',r.expires_at) ORDER BY r.updated_at DESC) FROM reports r WHERE r.episode=i.id AND NOT r.suppressed AND r.expires_at>now()),'[]'::jsonb)) FROM incidents i WHERE status<>'empty' ORDER BY average DESC,updated_at DESC`,
+		"incidents": `SELECT incident_json(i)||jsonb_build_object('reports',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'stars',r.stars,'updatedAt',r.updated_at,'expiresAt',r.expires_at) ORDER BY r.updated_at DESC) FROM (SELECT * FROM reports WHERE episode=i.id AND NOT suppressed AND expires_at>now() ORDER BY updated_at DESC,session_id DESC LIMIT 100) r),'[]'::jsonb)) FROM incidents i WHERE status<>'empty' ORDER BY average DESC,updated_at DESC`,
 	}[kind]
 	if q == "" {
 		return nil, ErrNotFound
@@ -251,4 +251,19 @@ func (s *Store) Team(ctx context.Context, actor, email, role string, enabled boo
 		return e
 	}
 	return tx.Commit(ctx)
+}
+
+// Refuge updates read authoritative state; polling snapshot caches must not be
+// used to acknowledge a closure or withdrawal event.
+func (s *Store) PublicRefuges(ctx context.Context) ([]json.RawMessage, error) {
+	tx, e := s.DB.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	if e != nil {
+		return nil, e
+	}
+	defer tx.Rollback(ctx)
+	items, e := publicRefuges(ctx, tx)
+	if e != nil {
+		return nil, e
+	}
+	return items, tx.Commit(ctx)
 }

@@ -1,1 +1,21 @@
-export async function api<T>(path:string,method='GET',body?:unknown,csrf?:string,key?:string):Promise<T>{const r=await fetch('/api/v1/'+path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{}),...(key?{'Idempotency-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json().catch(()=>({error:'Service unavailable'}));if(!r.ok)throw new Error(data.error||'Request failed');return data;}
+export async function api<T>(
+  path: string,
+  method = "GET",
+  body?: unknown,
+  csrf?: string,
+  key?: string,
+): Promise<T> {
+  const r = await fetch("/api/v1/" + path, {
+    method,
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+      ...(key ? { "Idempotency-Key": key } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({ error: "Service unavailable" }));
+  if (!r.ok) throw new Error(data.error || "Request failed");
+  return data;
+}

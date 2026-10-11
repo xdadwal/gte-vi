@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/redis/go-redis/v9"
 	"github.com/xdadwal/gte-vi/internal/platform"
+	"golang.org/x/sync/singleflight"
 	"io"
 	"log"
 	"math"
@@ -17,23 +18,32 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type Config struct {
 	PublicOrigin, Owner, Issuer, ClientID, ClientSecret, RedirectURL, DevToken, GraphDir, WebDir string
 	Secure                                                                                       bool
+	NetworkRateLimit                                                                             int
+	Role                                                                                         string
+	TrustedProxyCIDRs                                                                            []string
 }
 type App struct {
-	Store  *platform.Store
-	Redis  *redis.Client
-	Config Config
-	hub    *Hub
-	auth   *Auth
+	Store       *platform.Store
+	Redis       *redis.Client
+	Config      Config
+	hub         *Hub
+	auth        *Auth
+	connected   atomic.Bool
+	workerFresh atomic.Bool
+	snapMu      sync.Mutex
+	snapCache   map[string]cachedSnapshot
+	snapFlights singleflight.Group
 }
 
 func New(s *platform.Store, r *redis.Client, c Config) *App {
-	return &App{Store: s, Redis: r, Config: c, hub: NewHub()}
+	return &App{Store: s, Redis: r, Config: c, hub: NewHub(), snapCache: map[string]cachedSnapshot{}}
 }
 func write(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -106,7 +116,7 @@ func (a *App) Handler() http.Handler {
 	m.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, c := context.WithTimeout(r.Context(), 2*time.Second)
 		defer c()
-		if a.Store == nil || a.Store.DB.Ping(ctx) != nil || a.Redis == nil || a.Redis.Ping(ctx).Err() != nil {
+		if a.Store == nil || a.Store.DB.Ping(ctx) != nil || a.Redis == nil || a.Redis.Ping(ctx).Err() != nil || !a.workerFresh.Load() {
 			fail(w, 503, "dependencies unavailable")
 			return
 		}
@@ -115,9 +125,21 @@ func (a *App) Handler() http.Handler {
 	m.HandleFunc("POST /api/v1/session", a.session)
 	m.HandleFunc("PUT /api/v1/report", a.report)
 	m.HandleFunc("GET /api/v1/snapshot", a.snapshot)
+	m.HandleFunc("GET /api/v1/refuges", func(w http.ResponseWriter, r *http.Request) {
+		items, e := a.Store.PublicRefuges(r.Context())
+		if e != nil {
+			fail(w, 503, "refuge updates unavailable")
+			return
+		}
+		write(w, 200, map[string]any{"refuges": items})
+	})
 	m.HandleFunc("GET /api/v1/events", a.events)
 	m.HandleFunc("GET /api/v1/routing/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "public,max-age=300")
+		if strings.HasSuffix(r.URL.Path, "manifest.json") {
+			w.Header().Set("Cache-Control", "public,max-age=60")
+		} else {
+			w.Header().Set("Cache-Control", "public,max-age=31536000,immutable")
+		}
 		if strings.Contains(r.URL.Path, "..") {
 			http.NotFound(w, r)
 			return
@@ -188,13 +210,22 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]string{"csrf": csrf})
 }
 
-var rateScript = redis.NewScript(`local now=tonumber(ARGV[1]);local last=redis.call('GET',KEYS[1]);if last and now-tonumber(last)<30000 then return 0 end;redis.call('ZREMRANGEBYSCORE',KEYS[2],0,now-3600000);if redis.call('ZCARD',KEYS[2])>=30 then return 0 end;redis.call('SET',KEYS[1],now,'PX',30000);redis.call('ZADD',KEYS[2],now,ARGV[2]);redis.call('PEXPIRE',KEYS[2],3600000);return 1`)
+var rateScript = redis.NewScript(`if redis.call('EXISTS',KEYS[3])==1 then return 1 end;local now=tonumber(ARGV[1]);local last=redis.call('GET',KEYS[1]);if last and now-tonumber(last)<30000 then return 0 end;redis.call('ZREMRANGEBYSCORE',KEYS[2],0,now-3600000);if redis.call('ZCARD',KEYS[2])>=30 then return 0 end;redis.call('SET',KEYS[1],now,'PX',30000);redis.call('ZADD',KEYS[2],now,ARGV[2]);redis.call('PEXPIRE',KEYS[2],3600000);redis.call('SET',KEYS[3],1,'PX',3600000);return 1`)
 
 func (a *App) networkLimit(ctx context.Context, r *http.Request) bool {
 	if a.Redis == nil {
 		return false
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	for _, cidr := range a.Config.TrustedProxyCIDRs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err == nil && network.Contains(net.ParseIP(host)) {
+			if forwarded := net.ParseIP(r.Header.Get("X-Real-IP")); forwarded != nil {
+				host = forwarded.String()
+			}
+			break
+		}
+	}
 	k := "flood:" + platform.Hash(host)
 	n, e := a.Redis.Incr(ctx, k).Result()
 	if e != nil {
@@ -203,7 +234,11 @@ func (a *App) networkLimit(ctx context.Context, r *http.Request) bool {
 	if n == 1 {
 		a.Redis.Expire(ctx, k, time.Minute)
 	}
-	return n <= 300
+	limit := a.Config.NetworkRateLimit
+	if limit <= 0 {
+		limit = 300
+	}
+	return n <= int64(limit)
 }
 func (a *App) report(w http.ResponseWriter, r *http.Request) {
 	id := token(r, "gte_session")
@@ -221,11 +256,6 @@ func (a *App) report(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &b) {
 		return
 	}
-	age := time.Since(time.UnixMilli(b.Timestamp))
-	if b.Stars < 1 || b.Stars > 5 || math.IsNaN(b.Lon) || math.IsNaN(b.Lat) || b.Accuracy < 0 || b.Accuracy > 100 || age > 30*time.Second || age < -5*time.Second {
-		fail(w, 400, "choose1–5 stars and obtain a recent accurate location")
-		return
-	}
 	key := r.Header.Get("Idempotency-Key")
 	if len(key) < 16 || len(key) > 128 {
 		fail(w, 400, "a valid idempotency key is required")
@@ -237,22 +267,31 @@ func (a *App) report(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, json.RawMessage(cached))
 		return
 	}
+	age := time.Since(time.UnixMilli(b.Timestamp))
+	if b.Stars < 1 || b.Stars > 5 || math.IsNaN(b.Lon) || math.IsNaN(b.Lat) || b.Lon < -180 || b.Lon > 180 || b.Lat < -90 || b.Lat > 90 || b.Accuracy < 0 || b.Accuracy > 100 || age > 30*time.Second || age < -5*time.Second {
+		fail(w, 400, "choose 1–5 stars and obtain a recent accurate location")
+		return
+	}
 	cell, x, y, e := a.Store.Cell(r.Context(), b.Lon, b.Lat)
 	if e != nil {
-		fail(w, 400, e.Error())
+		if errors.Is(e, platform.ErrOutsideDelhi) {
+			fail(w, 400, "Reporting is available within Delhi NCT")
+		} else {
+			fail(w, 503, "Location check unavailable; please retry")
+		}
 		return
 	}
 	if !a.networkLimit(r.Context(), r) {
 		fail(w, 429, "too many requests; try again shortly")
 		return
 	}
-	n, e := rateScript.Run(r.Context(), a.Redis, []string{"report-last:" + platform.Hash(id), "report-hour:" + platform.Hash(id)}, time.Now().UnixMilli(), key).Int()
+	n, e := rateScript.Run(r.Context(), a.Redis, []string{"report-last:" + platform.Hash(id), "report-hour:" + platform.Hash(id), "report-admitted:" + platform.Hash(id) + ":" + platform.Hash(key)}, time.Now().UnixMilli(), key).Int()
 	if e != nil {
 		fail(w, 503, "reporting temporarily unavailable")
 		return
 	}
 	if n != 1 {
-		fail(w, 429, "wait30 seconds between reports; maximum30 per hour")
+		fail(w, 429, "wait 30 seconds between reports; maximum 30 per hour")
 		return
 	}
 	res, e := a.Store.Report(r.Context(), id, key, cell, x, y, b.Stars)
@@ -270,19 +309,24 @@ func (a *App) snapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	overview := r.URL.Query().Get("overview") == "true"
-	v, e := a.Store.Snapshot(r.Context(), cells, overview)
+	v, e := a.pollSnapshot(r.Context(), cells, overview)
 	if e != nil {
 		fail(w, 503, "map updates unavailable")
 		return
 	}
-	write(w, 200, v)
+	write(w, 200, json.RawMessage(v))
 }
 func (a *App) Start(ctx context.Context) error {
 	if e := a.initAuth(ctx); e != nil {
 		return e
 	}
-	go a.receive(ctx)
-	go a.work(ctx)
+	go a.monitorWorker(ctx)
+	if a.Config.Role != "api" && a.Config.Role != "worker" {
+		go a.receive(ctx)
+	}
+	if a.Config.Role == "" || a.Config.Role == "all" || a.Config.Role == "worker" {
+		go a.work(ctx)
+	}
 	return nil
 }
 func (a *App) work(ctx context.Context) {
@@ -318,10 +362,43 @@ func (a *App) work(ctx context.Context) {
 				items = append(items, i)
 			}
 			rows.Close()
+			latest := map[string]item{}
 			for _, i := range items {
+				var event struct {
+					Cell     string `json:"cell"`
+					Type     string `json:"type"`
+					Incident struct {
+						Revision int64 `json:"revision"`
+					} `json:"incident"`
+				}
+				if json.Unmarshal(i.p, &event) != nil {
+					return
+				}
+				key := event.Cell
+				if key == "" {
+					key = event.Type
+				}
+				previous, ok := latest[key]
+				if !ok || event.Incident.Revision == 0 {
+					latest[key] = i
+				} else {
+					var prev struct {
+						Incident struct {
+							Revision int64 `json:"revision"`
+						} `json:"incident"`
+					}
+					json.Unmarshal(previous.p, &prev)
+					if event.Incident.Revision > prev.Incident.Revision {
+						latest[key] = i
+					}
+				}
+			}
+			for _, i := range latest {
 				if a.Redis.Publish(ctx, "gte:events", i.p).Err() != nil {
 					return
 				}
+			}
+			for _, i := range items {
 				if _, e = tx.Exec(ctx, `UPDATE outbox SET published_at=now() WHERE id=$1`, i.id); e != nil {
 					return
 				}
@@ -406,6 +483,7 @@ func (a *App) receive(ctx context.Context) {
 		p := a.Redis.Subscribe(ctx, "gte:events")
 		if _, e := p.Receive(ctx); e != nil {
 			p.Close()
+			a.connected.Store(false)
 			a.hub.reset()
 			select {
 			case <-ctx.Done():
@@ -414,21 +492,29 @@ func (a *App) receive(ctx context.Context) {
 			}
 			continue
 		}
+		a.hub.reset()
+		a.connected.Store(true)
 		for {
-			msg, e := p.ReceiveMessage(ctx)
+			msg, e := p.Receive(ctx)
 			if e != nil {
+				a.connected.Store(false)
 				a.hub.reset()
 				p.Close()
 				break
 			}
-			a.hub.publish([]byte(msg.Payload))
+			switch msg := msg.(type) {
+			case *redis.Message:
+				a.hub.publish([]byte(msg.Payload))
+			case *redis.Subscription:
+				a.hub.reset() // Reconnect requires a fresh authoritative snapshot.
+			}
 		}
 	}
 }
 func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	cells, e := parseCells(r.URL.Query().Get("cells"))
 	if e != nil || len(cells) == 0 {
-		fail(w, 400, "subscribe to1–1024 cells")
+		fail(w, 400, "subscribe to 1–1024 cells")
 		return
 	}
 	f, ok := w.(http.Flusher)
@@ -438,6 +524,10 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	}
 	sub := a.hub.add(cells)
 	defer a.hub.remove(sub)
+	if !a.connected.Load() {
+		fail(w, 503, "live updates reconnecting")
+		return
+	}
 	snap, e := a.Store.Snapshot(r.Context(), cells, false)
 	if e != nil {
 		fail(w, 503, "snapshot unavailable")
@@ -474,9 +564,31 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-t.C:
+			if !a.workerFresh.Load() {
+				return
+			}
 			if !send("heartbeat", map[string]any{"serverTime": time.Now().UTC()}) {
 				return
 			}
+		}
+	}
+}
+
+func (a *App) monitorWorker(ctx context.Context) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		current := a.Store.WorkerCurrent(readCtx)
+		cancel()
+		a.workerFresh.Store(current)
+		if !current {
+			a.hub.reset()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
 	}
 }

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS boundary(id text PRIMARY KEY, geom geometry(MultiPoly
 CREATE TABLE IF NOT EXISTS sessions(id text PRIMARY KEY, csrf text NOT NULL, expires_at timestamptz NOT NULL);
 CREATE TABLE IF NOT EXISTS incidents(id text PRIMARY KEY, cell text UNIQUE NOT NULL, x integer NOT NULL,y integer NOT NULL,status text NOT NULL DEFAULT 'empty',count integer NOT NULL DEFAULT 0,average double precision NOT NULL DEFAULT 0,buffer double precision NOT NULL DEFAULT 0,revision bigint NOT NULL DEFAULT nextval('entity_revision'),updated_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS reports(id text PRIMARY KEY,episode text NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,session_id text NOT NULL REFERENCES sessions(id),stars integer NOT NULL CHECK(stars BETWEEN 1 AND 5),updated_at timestamptz NOT NULL,expires_at timestamptz NOT NULL,suppressed boolean NOT NULL DEFAULT false,UNIQUE(episode,session_id));
+CREATE INDEX IF NOT EXISTS reports_recent ON reports(episode,updated_at DESC,session_id DESC) WHERE NOT suppressed;
 CREATE INDEX IF NOT EXISTS reports_expiry ON reports(expires_at) WHERE NOT suppressed;
 CREATE TABLE IF NOT EXISTS receipts(session_id text NOT NULL REFERENCES sessions(id),key text NOT NULL,response jsonb NOT NULL,expires_at timestamptz NOT NULL,PRIMARY KEY(session_id,key));
 CREATE TABLE IF NOT EXISTS admins(email text PRIMARY KEY,role text NOT NULL CHECK(role IN('owner','admin')),enabled boolean NOT NULL DEFAULT true);
@@ -20,3 +21,5 @@ CREATE OR REPLACE FUNCTION incident_json(i incidents) RETURNS jsonb LANGUAGE SQL
  'expiresAt',(SELECT min(expires_at) FROM reports r WHERE r.episode=i.id AND NOT suppressed AND expires_at>now()))
 $$;
 CREATE TABLE IF NOT EXISTS login_flows(state text PRIMARY KEY,nonce text NOT NULL,verifier text NOT NULL,expires_at timestamptz NOT NULL);
+
+CREATE TABLE IF NOT EXISTS runtime_state(name text PRIMARY KEY,checked_at timestamptz NOT NULL);

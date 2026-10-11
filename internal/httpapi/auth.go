@@ -72,6 +72,10 @@ func (a *App) createAdminSession(w http.ResponseWriter, r *http.Request, email s
 	return true
 }
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
+	if !a.networkLimit(r.Context(), r) {
+		fail(w, 429, "too many sign-in requests")
+		return
+	}
 	if a.auth == nil {
 		fail(w, 503, "configure operator sign-in before production deployment")
 		return

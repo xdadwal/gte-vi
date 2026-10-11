@@ -40,3 +40,7 @@ web/dist/
 artifacts/
 *.log
 bin/
+
+*.tsbuildinfo
+web/playwright-report/
+web/test-results/

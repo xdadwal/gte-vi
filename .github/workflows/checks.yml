@@ -1,0 +1,55 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: gte
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: gte_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U gte" --health-interval 5s
+          --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgres://gte:ci-only@127.0.0.1:5432/gte_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: npm ci && npm test && npm run build
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - name: Start local browser test stack
+        run: |
+          psql "$TEST_DATABASE_URL" -c 'CREATE DATABASE gte;'
+          APP_ENV=development DEV_AUTH_TOKEN=local-development-only DATABASE_URL='postgres://gte:ci-only@127.0.0.1:5432/gte?sslmode=disable' REDIS_URL=redis://127.0.0.1:6379 go run ./cmd/gte > /tmp/gte-api.log 2>&1 &
+          npm run dev --prefix web > /tmp/gte-web.log 2>&1 &
+          for attempt in $(seq 1 60); do if curl --fail --silent http://127.0.0.1:8080/api/v1/health && curl --fail --silent http://127.0.0.1:5173/ >/dev/null; then exit 0; fi; sleep 1; done
+          cat /tmp/gte-api.log /tmp/gte-web.log
+          exit 1
+      - run: npx playwright test e2e/map.spec.ts
+        working-directory: web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: web/test-results/

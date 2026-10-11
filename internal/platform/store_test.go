@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,6 +16,10 @@ func testStore(t *testing.T) *Store {
 	u := os.Getenv("TEST_DATABASE_URL")
 	if u == "" {
 		t.Skip("TEST_DATABASE_URL required for PostGIS integration")
+	}
+	parsed, err := url.Parse(u)
+	if err != nil || !strings.HasSuffix(parsed.Path, "_test") {
+		t.Fatal("integration tests require a dedicated database ending in _test")
 	}
 	s, e := Open(context.Background(), u)
 	if e != nil {
@@ -25,6 +31,9 @@ func testStore(t *testing.T) *Store {
 	}
 	_, e = s.DB.Exec(context.Background(), `TRUNCATE receipts,reports,incidents,sessions,outbox,refuges,audit,admin_sessions RESTART IDENTITY CASCADE`)
 	if e != nil {
+		t.Fatal(e)
+	}
+	if e := s.Expire(context.Background()); e != nil {
 		t.Fatal(e)
 	}
 	return s
@@ -126,3 +135,68 @@ func TestExpiryAndPrivateRefugeDetails(t *testing.T) {
 	}
 }
 func ptrTime(t time.Time) *time.Time { return &t }
+func TestTeamCannotRevokeLastOwner(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if e := s.Team(ctx, "owner@example.test", "owner@example.test", "owner", false); e == nil {
+		t.Fatal("last owner revoked")
+	}
+	if e := s.Team(ctx, "owner@example.test", "second@example.test", "owner", true); e != nil {
+		t.Fatal(e)
+	}
+	defer s.DB.Exec(ctx, `DELETE FROM admins WHERE email='second@example.test'`)
+	if e := s.Team(ctx, "owner@example.test", "second@example.test", "admin", true); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.Team(ctx, "owner@example.test", "second@example.test", "owner", false); e != nil {
+		t.Fatal(e)
+	}
+}
+func TestExpiredEpisodeStartsFreshBeforeWorker(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	id := ID()
+	s.Session(ctx, id, "c")
+	c, x, y, _ := s.Cell(ctx, 77.209, 28.6139)
+	b, e := s.Report(ctx, id, "first", c, x, y, 5)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var old map[string]any
+	json.Unmarshal(b, &old)
+	if _, e = s.DB.Exec(ctx, `UPDATE reports SET expires_at=now()-interval '1 second'`); e != nil {
+		t.Fatal(e)
+	}
+	b, e = s.Report(ctx, id, "second", c, x, y, 1)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var fresh map[string]any
+	json.Unmarshal(b, &fresh)
+	if fresh["id"] == old["id"] {
+		t.Fatal("expired episode revived before worker")
+	}
+	snap, e := s.Snapshot(ctx, nil, true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(snap["incidents"].([]json.RawMessage)) != 0 || len(snap["overview"].([]json.RawMessage)) != 1 {
+		t.Fatal("overview must be aggregate only", snap)
+	}
+}
+func TestSnapshotRejectsExpiredWorkerLease(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if _, e := s.DB.Exec(ctx, `UPDATE runtime_state SET checked_at=now()-interval '4 seconds' WHERE name='expiry'`); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Snapshot(ctx, nil, true); e == nil {
+		t.Fatal("snapshot accepted stale expiry worker")
+	}
+	if e := s.Expire(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := s.Snapshot(ctx, nil, true); e != nil {
+		t.Fatal(e)
+	}
+}

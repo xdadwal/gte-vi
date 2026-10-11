@@ -6,9 +6,11 @@ import (
 	"github.com/xdadwal/gte-vi/internal/httpapi"
 	"github.com/xdadwal/gte-vi/internal/platform"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -39,9 +41,22 @@ func main() {
 	r := redis.NewClient(opts)
 	defer r.Close()
 	secure := env("APP_ENV", "production") != "development"
-	c := httpapi.Config{PublicOrigin: env("PUBLIC_ORIGIN", "http://127.0.0.1:5173"), Owner: owner, Issuer: os.Getenv("OIDC_ISSUER"), ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"), RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), DevToken: os.Getenv("DEV_AUTH_TOKEN"), Secure: secure, WebDir: env("WEB_DIR", "web/dist"), GraphDir: env("GRAPH_DIR", "artifacts/routing")}
-	if secure && (c.Issuer == "" || strings.HasSuffix(owner, ".test")) {
-		log.Fatal("production requires OIDC_ISSUER and a real OWNER_EMAIL")
+	c := httpapi.Config{Role: env("APP_ROLE", "all"), PublicOrigin: env("PUBLIC_ORIGIN", "http://127.0.0.1:5173"), Owner: owner, Issuer: os.Getenv("OIDC_ISSUER"), ClientID: os.Getenv("OIDC_CLIENT_ID"), ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"), RedirectURL: os.Getenv("OIDC_REDIRECT_URL"), DevToken: os.Getenv("DEV_AUTH_TOKEN"), Secure: secure, TrustedProxyCIDRs: strings.FieldsFunc(os.Getenv("TRUSTED_PROXY_CIDRS"), func(r rune) bool { return r == ',' }), WebDir: env("WEB_DIR", "web/dist"), GraphDir: env("GRAPH_DIR", "artifacts/routing")}
+	if c.Role != "all" && c.Role != "api" && c.Role != "gateway" && c.Role != "worker" {
+		log.Fatal("APP_ROLE must be all, api, gateway or worker")
+	}
+	limit, err := strconv.Atoi(env("NETWORK_RATE_PER_MINUTE", "300"))
+	if err != nil || limit < 1 {
+		log.Fatal("NETWORK_RATE_PER_MINUTE must be a positive integer")
+	}
+	c.NetworkRateLimit = limit
+	for _, cidr := range c.TrustedProxyCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			log.Fatal("invalid TRUSTED_PROXY_CIDRS")
+		}
+	}
+	if secure && (c.Issuer == "" || c.ClientID == "" || c.RedirectURL == "" || !strings.HasPrefix(c.PublicOrigin, "https://") || !strings.HasPrefix(c.RedirectURL, c.PublicOrigin+"/") || c.DevToken != "" || strings.HasSuffix(owner, ".test")) {
+		log.Fatal("production requires HTTPS origin/callback, OIDC issuer/client, a real owner email and no development token")
 	}
 	a := httpapi.New(s, r, c)
 	if e = a.Start(ctx); e != nil {
