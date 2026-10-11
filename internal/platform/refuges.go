@@ -143,6 +143,9 @@ func (s *Store) Moderate(ctx context.Context, email, episode string, revision in
 		return e
 	}
 	defer tx.Rollback(ctx)
+	if _, e = settingsTx(ctx, tx, "FOR SHARE"); e != nil {
+		return e
+	}
 	var cell string
 	e = tx.QueryRow(ctx, `SELECT cell FROM incidents WHERE id=$1`, episode).Scan(&cell)
 	if errors.Is(e, pgx.ErrNoRows) {

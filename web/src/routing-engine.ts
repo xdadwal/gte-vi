@@ -12,6 +12,7 @@ export type RoutingRequest = {
   refuges: Refuge[];
   zones: Zone[];
   now: number;
+  settings?: { walkingMaxMeters: number; walkingSpeedKmh: number };
 };
 export interface RoutingEngine {
   route(request: RoutingRequest): Promise<WalkingRoute>;

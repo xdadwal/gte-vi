@@ -23,3 +23,5 @@ $$;
 CREATE TABLE IF NOT EXISTS login_flows(state text PRIMARY KEY,nonce text NOT NULL,verifier text NOT NULL,expires_at timestamptz NOT NULL);
 
 CREATE TABLE IF NOT EXISTS runtime_state(name text PRIMARY KEY,checked_at timestamptz NOT NULL);
+
+CREATE TABLE IF NOT EXISTS runtime_settings(id integer PRIMARY KEY CHECK(id=1),revision bigint NOT NULL,values jsonb NOT NULL);

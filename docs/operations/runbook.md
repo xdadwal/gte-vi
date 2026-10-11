@@ -16,7 +16,7 @@ Build `Dockerfile`; mount the generated graph read-only at `/app/routing`, or ro
 
 Route `/api/v1/events` to gateways, other API traffic to API replicas, and static/map/graph files through a CDN. Keep workers private. Every role uses shared PostgreSQL and Redis. Schema bootstrap takes a database advisory lock and executes in one transaction. Owner bootstrap inserts only if absent; it does not restore revoked access on restart.
 
-Terminate TLS at a trusted proxy. Preserve same-origin cookies and Origin. Disable SSE buffering and compression; permit idle streams beyond the 15-second heartbeat. Set per-process open-file limits to at least 65536 and independently budget gateway replicas and database pool connections. Go's request-header timeout is 5 seconds and stream writes time out after 10 seconds to shed slow receivers. Zone queues are bounded; overflow requires a fresh snapshot.
+Terminate TLS at a trusted proxy. Preserve same-origin cookies and Origin. Disable SSE buffering and compression; permit idle streams beyond the configured heartbeat (default 15 seconds). Set per-process open-file limits to at least 65536 and independently budget gateway replicas and database pool connections. Go's request-header timeout is 5 seconds and stream writes time out after 10 seconds to shed slow receivers. Zone queues are bounded; overflow requires a fresh snapshot.
 
 Example proxy settings for the SSE location:
 
@@ -29,7 +29,7 @@ proxy_buffering off;
 proxy_read_timeout 75s;
 ```
 
-Set `TRUSTED_PROXY_CIDRS` only to proxies that **replace** `X-Real-IP`. Direct traffic ignores that header. Set `NETWORK_RATE_PER_MINUTE` according to measured shared-network traffic; default 300/IP/min applies to new anonymous sessions, reports, and OIDC login starts. Session reporting limits remain 30 seconds and 30 per hour. Redis admission remembers idempotency keys so a failed admitted write can retry without waiting for another cooldown.
+Set `TRUSTED_PROXY_CIDRS` only to proxies that **replace** `X-Real-IP`. Direct traffic ignores that header. Adjust network admission limits in owner Settings according to measured shared-network traffic; default 300/IP/min applies to new anonymous sessions, reports, and OIDC login starts. Session reporting defaults remain 30 seconds and 30 per hour. `NETWORK_RATE_PER_MINUTE` is deprecated and ignored; persisted settings are authoritative. Redis admission remembers idempotency keys so a failed admitted write can retry without waiting for another cooldown.
 
 Tune the pgx pool through the database URL (`pool_max_conns`, `pool_min_conns`); count connections across every API/gateway/worker replica. Avoid unbounded autoscaling into a database connection ceiling. The published capacity goal needs deployed tests, not extrapolation from this laptop.
 
@@ -37,7 +37,7 @@ Tune the pgx pool through the database URL (`pool_max_conns`, `pool_min_conns`);
 
 Report expiry runs each second. The database records the last completed expiry transaction; snapshots fail closed if its lease exceeds three seconds. Gateways monitor that lease and close streams if it lapses. Redis reconnect resets subscribers and requires a new authoritative snapshot. Buffered updates are compared against snapshot revisions, including empty-cell tombstones. SSE snapshots are never served from the polling cache.
 
-Polling snapshots use a bounded 256-entry, 256 KB-per-entry cache for at most 500 ms; concurrent identical reads share one query. Refuge SSE events refresh through `/api/v1/refuges`, which reads authoritative public details and bypasses that cache. Slow/missing data disables route calculation and stale admin mutations.
+Polling snapshots use a bounded 256-entry, 256 KB-per-entry cache for the configured lifetime (default 500 ms); concurrent identical reads share one query. Refuge SSE events refresh through `/api/v1/refuges`, which reads authoritative public details and bypasses that cache. Slow/missing data disables route calculation and stale admin mutations.
 
 The outbox coalesces changes to the same cell within a publication batch, preserving the newest revision. PostgreSQL retains each submitted report and audit; subscribers receive current cell state rather than every intermediate rating. Publication retries may duplicate messages; revisions prevent regressions.
 
@@ -45,11 +45,11 @@ Monitor health, expiry lease, oldest unpublished outbox age, write/snapshot late
 
 ## Operator workflow
 
-Approve verified operator emails in Team access. All approved operators can moderate reports and manage refuges; owners additionally control access. The last owner cannot be removed/demoted. Revocation deletes that user's sessions and every API authorization also checks current membership.
+Approve verified operator emails in Team access. All approved operators can moderate reports and manage refuges; owners additionally control access and runtime settings. See [runtime settings](runtime-settings.md) for validated deployment-free tweaks and expiry semantics. The last owner cannot be removed/demoted. Revocation deletes that user's sessions and every API authorization also checks current membership.
 
 Create draft refuges at the actual pedestrian entrance. Record host contact, confirmation date/notes privately, public access instructions, opening intervals, and Delhi-time date exceptions. Review the public preview before publishing. Archive withdrawn permission. Temporary closure requires manual reopening. No automatic incident overrides or official stars exist.
 
-Incidents display the latest 100 fresh contributions; the count covers all fresh sessions and the latest 50 determine severity. Removal previews show the resulting total and severity. Hide suppresses all existing contributions with an audit reason; a later submission creates a new pending episode. Conflicts require reselecting against the current revision. Activity lists the latest 500 changes, including before/after state; durable audit remains in PostgreSQL.
+Incidents display the latest 100 fresh contributions; the count covers all fresh sessions and the the configured rating window (default latest 50) determines severity. Removal previews show the resulting total and severity. Hide suppresses all existing contributions with an audit reason; a later submission creates a new pending episode. Conflicts require reselecting against the current revision. Activity lists the latest 500 changes, including before/after state; durable audit remains in PostgreSQL.
 
 ## Data and backups
 

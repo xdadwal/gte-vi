@@ -12,6 +12,7 @@ import {
 import { MapView } from "./MapView";
 import { HoldButton } from "./HoldButton";
 import { useLive, useLocation } from "./live";
+import { useSettings, radiusChoices, clampRadius } from "./settings";
 import { api } from "./api";
 import { randomId } from "./id";
 import {
@@ -66,11 +67,16 @@ function preference<T>(key: string, initial: T): T {
   }
 }
 export function PublicMap() {
+  const {
+    settings: { values: config, revision },
+  } = useSettings();
   const location = useLocation(),
     [bounds, setBounds] = useState<[number, number, number, number]>([
       77.15, 28.57, 77.27, 28.67,
     ]),
-    [radius, setRadius] = useState(() => preference("gte-radius", 1000)),
+    [radius, setRadius] = useState(() =>
+      preference("gte-radius", config.alertRadiusDefaultMeters),
+    ),
     [sound, setSound] = useState(() => preference("gte-sound", false)),
     [locate, setLocate] = useState(0),
     [panel, setPanel] = useState<
@@ -90,7 +96,16 @@ export function PublicMap() {
   const viewCells = useMemo(() => cellsInBounds(...bounds), [bounds]);
   const cells = useMemo(() => {
     const merged = new Set([
-      ...(points ? cellsAround(points, Math.max(radius + 500, 3500)) : []),
+      ...(points
+        ? cellsAround(
+            points,
+            Math.max(config.alertRadiusMaxMeters, config.walkingMaxMeters) +
+              Math.max(
+                config.bufferPerStarMeters * 5,
+                config.pendingBufferMeters,
+              ),
+          )
+        : []),
       ...viewCells,
     ]);
     return [...merged].slice(0, 1024).sort();
@@ -99,6 +114,10 @@ export function PublicMap() {
     points?.x && Math.floor(points.x / 500),
     points?.y && Math.floor(points.y / 500),
     radius,
+    config.alertRadiusMaxMeters,
+    config.walkingMaxMeters,
+    config.bufferPerStarMeters,
+    config.pendingBufferMeters,
   ]);
   const { snapshot, state, fresh } = useLive(cells, !viewCells.length);
   const liveFresh = useRef(fresh);
@@ -124,6 +143,10 @@ export function PublicMap() {
   fingerprint.current = JSON.stringify([
     incidents.map((i) => [i.id, i.revision]),
     snapshot.refuges.map((r) => [r.id, r.revision]),
+    config.walkingMaxMeters,
+    config.walkingSpeedKmh,
+    config.bufferPerStarMeters,
+    config.pendingBufferMeters,
   ]);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -136,9 +159,22 @@ export function PublicMap() {
     },
     [],
   );
+  const radiusInitialized = useRef(false);
+  const [radiusReady, setRadiusReady] = useState(false);
   useEffect(() => {
-    localStorage.setItem("gte-radius", JSON.stringify(radius));
-  }, [radius]);
+    if (!revision) return;
+    const needsDefault =
+      !radiusInitialized.current && localStorage.getItem("gte-radius") === null;
+    const defaultRadius = config.alertRadiusDefaultMeters;
+    setRadius((old) =>
+      needsDefault ? defaultRadius : clampRadius(old, config),
+    );
+    radiusInitialized.current = true;
+    setRadiusReady(true);
+  }, [revision, config]);
+  useEffect(() => {
+    if (radiusReady) localStorage.setItem("gte-radius", JSON.stringify(radius));
+  }, [radius, radiusReady]);
   useEffect(() => {
     localStorage.setItem("gte-sound", JSON.stringify(sound));
   }, [sound]);
@@ -147,7 +183,7 @@ export function PublicMap() {
       !location.fix ||
       !fresh ||
       document.hidden ||
-      Date.now() - location.fix.timestamp > 30000
+      Date.now() - location.fix.timestamp > config.locationMaxAgeSeconds * 1000
     )
       return;
     const stored = preference<Record<string, AlertMemory>>("gte-alerts", {});
@@ -159,6 +195,7 @@ export function PublicMap() {
         radius,
         now,
         memory.current[i.id],
+        config,
       );
       memory.current[i.id] = a.memory;
       if (a.notify) {
@@ -184,18 +221,22 @@ export function PublicMap() {
       if (!alive.has(id)) delete memory.current[id];
     }
     localStorage.setItem("gte-alerts", JSON.stringify(memory.current));
-  }, [incidents, location.fix, radius, now, fresh, sound]);
+  }, [incidents, location.fix, radius, now, fresh, sound, config]);
   useEffect(() => {
     if (!route) return;
-    let invalid = !fresh;
+    let invalid = !fresh || route.distance > config.walkingMaxMeters;
     const current = snapshot.refuges.find((r) => r.id === route.refuge.id);
     if (
       !current ||
-      !openThrough(current, now, now + (route.distance / 4000) * 3600000) ||
+      !openThrough(
+        current,
+        now,
+        now + (route.distance / (config.walkingSpeedKmh * 1000)) * 3600000,
+      ) ||
       !refugeEligible(
         current,
         incidents,
-        now + (route.distance / 4000) * 3600000,
+        now + (route.distance / (config.walkingSpeedKmh * 1000)) * 3600000,
       )
     )
       invalid = true;
@@ -212,10 +253,34 @@ export function PublicMap() {
       }
     }
     if (invalid) setAffected(true);
-  }, [incidents, snapshot.refuges, route, fresh, Math.floor(now / 60000)]);
+  }, [
+    incidents,
+    snapshot.refuges,
+    route,
+    fresh,
+    Math.floor(now / 60000),
+    config.walkingSpeedKmh,
+    config.walkingMaxMeters,
+  ]);
+  const routingRules = `${config.walkingMaxMeters}:${config.walkingSpeedKmh}:${config.bufferPerStarMeters}:${config.pendingBufferMeters}`;
+  const previousRules = useRef(routingRules);
+  useEffect(() => {
+    if (previousRules.current !== routingRules) {
+      ++routeGeneration.current;
+      engine.current?.dispose();
+      setCalculating(false);
+      if (route) setAffected(true);
+      previousRules.current = routingRules;
+    }
+  }, [routingRules, route]);
   const offSince = useRef<number | null>(null);
   useEffect(() => {
-    if (!route || !location.fix || location.fix.accuracy > 50) return;
+    if (
+      !route ||
+      !location.fix ||
+      location.fix.accuracy > config.offRouteMeters
+    )
+      return;
     const p = xy(location.fix.lon, location.fix.lat);
     let distance = Infinity;
     for (let n = 1; n < route.coordinates.length; n++) {
@@ -235,14 +300,14 @@ export function PublicMap() {
         Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy),
       );
     }
-    if (distance > 50) {
+    if (distance > config.offRouteMeters) {
       offSince.current ??= now;
-      if (now - offSince.current >= 10000) {
+      if (now - offSince.current >= config.offRouteSeconds * 1000) {
         setAffected(true);
         setBanner("You’re off the route. Reroute when ready.");
       }
     } else offSince.current = null;
-  }, [location.fix, route, now]);
+  }, [location.fix, route, now, config.offRouteMeters, config.offRouteSeconds]);
   function openReport() {
     location.start();
     setPanel("report");
@@ -254,9 +319,15 @@ export function PublicMap() {
     setError("");
     if (!request.current) {
       const fix = location.fix;
-      if (!fix || Date.now() - fix.timestamp > 30000 || fix.accuracy > 100) {
+      if (
+        !fix ||
+        Date.now() - fix.timestamp > config.locationMaxAgeSeconds * 1000 ||
+        fix.accuracy > config.locationAccuracyMeters
+      ) {
         location.start();
-        setError("Waiting for a recent location accurate within 100 metres.");
+        setError(
+          `Waiting for a recent location accurate within ${config.locationAccuracyMeters} metres.`,
+        );
         return;
       }
       request.current = { key: randomId(), body: { ...fix, stars } };
@@ -264,8 +335,9 @@ export function PublicMap() {
     const currentFix = location.fix;
     if (
       currentFix &&
-      Date.now() - currentFix.timestamp <= 30000 &&
-      currentFix.accuracy <= 100
+      Date.now() - currentFix.timestamp <=
+        config.locationMaxAgeSeconds * 1000 &&
+      currentFix.accuracy <= config.locationAccuracyMeters
     ) {
       const original = xy(request.current.body.lon, request.current.body.lat),
         current = xy(currentFix.lon, currentFix.lat);
@@ -311,7 +383,11 @@ export function PublicMap() {
       return;
     }
     const fix = location.fix;
-    if (!fix || Date.now() - fix.timestamp > 30000 || fix.accuracy > 100) {
+    if (
+      !fix ||
+      Date.now() - fix.timestamp > config.locationMaxAgeSeconds * 1000 ||
+      fix.accuracy > config.locationAccuracyMeters
+    ) {
       location.start();
       setError("Waiting for a recent location before finding a route.");
       return;
@@ -327,6 +403,10 @@ export function PublicMap() {
         refuges: target ? [target] : eligible,
         zones: incidents.map(zone),
         now: Date.now(),
+        settings: {
+          walkingMaxMeters: config.walkingMaxMeters,
+          walkingSpeedKmh: config.walkingSpeedKmh,
+        },
       });
       if (id !== routeGeneration.current) return;
       if (!liveFresh.current || stamp !== fingerprint.current)
@@ -346,7 +426,9 @@ export function PublicMap() {
     }
   }
 
-  const recentFix = location.fix && now - location.fix.timestamp <= 30000;
+  const recentFix =
+    location.fix &&
+    now - location.fix.timestamp <= config.locationMaxAgeSeconds * 1000;
   const displayState =
     state === "live"
       ? "Live"
@@ -458,7 +540,12 @@ export function PublicMap() {
             <p className="intro">Fresh reports from people nearby.</p>
             <div className="legend">
               <span>
-                <i className="severity-ramp" />
+                <i
+                  className="severity-ramp"
+                  style={{
+                    background: `linear-gradient(90deg, ${config.starColors.join(", ")})`,
+                  }}
+                />
                 1–5 ★ reported areas
               </span>
               <span>
@@ -473,9 +560,9 @@ export function PublicMap() {
                 value={radius}
                 onChange={(e) => setRadius(Number(e.target.value))}
               >
-                {[500, 1000, 1500, 2000, 2500, 3000].map((r) => (
+                {radiusChoices(config).map((r) => (
                   <option key={r} value={r}>
-                    {r < 1000 ? "500 m" : `${r / 1000} km`}
+                    {r < 1000 ? `${r} m` : `${r / 1000} km`}
                   </option>
                 ))}
               </select>
@@ -524,8 +611,10 @@ export function PublicMap() {
                 !stars ||
                 sending ||
                 !recentFix ||
-                (!!location.fix && location.fix.accuracy > 100)
+                (!!location.fix &&
+                  location.fix.accuracy > config.locationAccuracyMeters)
               }
+              duration={config.reportHoldSeconds}
               onComplete={submit}
             />
             {sending && <p role="status">Sending…</p>}
@@ -555,8 +644,8 @@ export function PublicMap() {
                   </p>
                   <p className="small-copy">
                     {current.status === "pending"
-                      ? "Alerts start at five reporting sessions."
-                      : "Ratings expire after 30 minutes without refresh."}
+                      ? `Alerts start at ${config.activationReports} reporting sessions.`
+                      : `Ratings expire after ${config.reportExpiryMinutes} minutes without refresh.`}
                   </p>
                 </article>
               ) : (
@@ -578,7 +667,10 @@ export function PublicMap() {
                 <h2>{route.refuge.name}</h2>
                 <p>
                   {(route.distance / 1000).toFixed(1)} km · about{" "}
-                  {Math.ceil((route.distance / 4000) * 60)} min
+                  {Math.ceil(
+                    (route.distance / (config.walkingSpeedKmh * 1000)) * 60,
+                  )}{" "}
+                  min
                 </p>
                 {route.insideDistance > 0 && (
                   <p className="warning">
@@ -694,7 +786,10 @@ export function PublicMap() {
         </p>
       </section>
       <div className="map-caption">
-        DELHI / INDIA<span>Anonymous reports · 30-minute freshness</span>
+        DELHI / INDIA
+        <span>
+          Anonymous reports · {config.reportExpiryMinutes}-minute freshness
+        </span>
       </div>
     </main>
   );

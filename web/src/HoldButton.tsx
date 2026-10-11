@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 export function HoldButton({
+  duration = 3,
   disabled,
   onComplete,
 }: {
+  duration?: number;
   disabled: boolean;
   onComplete: () => void;
 }) {
@@ -25,7 +27,7 @@ export function HoldButton({
       done.current = true;
       setHolding(false);
       callback.current();
-    }, 3000);
+    }, duration * 1000);
   };
   useEffect(() => {
     const cancelOnHide = () => {
@@ -42,6 +44,7 @@ export function HoldButton({
   useEffect(() => {
     if (disabled) cancel();
   }, [disabled]);
+  useEffect(cancel, [duration]);
   return (
     <button
       type="button"
@@ -80,10 +83,13 @@ export function HoldButton({
       }}
       onBlur={cancel}
       onContextMenu={(e) => e.preventDefault()}
-      aria-label="Hold 3s to report"
+      style={
+        { "--hold-duration": `${duration}s` } as import("react").CSSProperties
+      }
+      aria-label={`Hold ${duration}s to report`}
     >
       <span className="hold-fill" aria-hidden="true" />
-      <span>{holding ? "Keep holding…" : "Hold 3s to report"}</span>
+      <span>{holding ? "Keep holding…" : `Hold ${duration}s to report`}</span>
     </button>
   );
 }

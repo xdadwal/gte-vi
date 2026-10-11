@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/redis/go-redis/v9"
+	"github.com/xdadwal/gte-vi/internal/domain"
 	"github.com/xdadwal/gte-vi/internal/platform"
 	"golang.org/x/sync/singleflight"
 	"io"
@@ -32,6 +33,8 @@ type Config struct {
 	DevelopmentOrigins                                                                           []string
 }
 type App struct {
+	settingsMu  sync.RWMutex
+	settings    domain.SettingsEnvelope
 	Store       *platform.Store
 	Redis       *redis.Client
 	Config      Config
@@ -115,6 +118,9 @@ func parseCells(s string) ([]string, error) {
 }
 func (a *App) Handler() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /api/v1/settings", a.publicSettings)
+	m.HandleFunc("GET /api/v1/admin/settings", a.adminSettings)
+	m.HandleFunc("PUT /api/v1/admin/settings", a.adminSettings)
 	m.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
 		ctx, c := context.WithTimeout(r.Context(), 2*time.Second)
 		defer c()
@@ -212,9 +218,12 @@ func (a *App) session(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, map[string]string{"csrf": csrf})
 }
 
-var rateScript = redis.NewScript(`if redis.call('EXISTS',KEYS[3])==1 then return 1 end;local now=tonumber(ARGV[1]);local last=redis.call('GET',KEYS[1]);if last and now-tonumber(last)<30000 then return 0 end;redis.call('ZREMRANGEBYSCORE',KEYS[2],0,now-3600000);if redis.call('ZCARD',KEYS[2])>=30 then return 0 end;redis.call('SET',KEYS[1],now,'PX',30000);redis.call('ZADD',KEYS[2],now,ARGV[2]);redis.call('PEXPIRE',KEYS[2],3600000);redis.call('SET',KEYS[3],1,'PX',3600000);return 1`)
+var rateScript = redis.NewScript(`if redis.call('EXISTS',KEYS[3])==1 then return 1 end;local now=tonumber(ARGV[1]);local last=redis.call('GET',KEYS[1]);if last and now-tonumber(last)<tonumber(ARGV[3]) then return 0 end;redis.call('ZREMRANGEBYSCORE',KEYS[2],0,now-3600000);if redis.call('ZCARD',KEYS[2])>=tonumber(ARGV[4]) then return 0 end;redis.call('SET',KEYS[1],now,'PX',3600000);redis.call('ZADD',KEYS[2],now,ARGV[2]);redis.call('PEXPIRE',KEYS[2],3600000);redis.call('SET',KEYS[3],1,'PX',3600000);return 1`)
 
 func (a *App) networkLimit(ctx context.Context, r *http.Request) bool {
+	return a.networkLimitWithSettings(ctx, r, a.currentSettings().Values)
+}
+func (a *App) networkLimitWithSettings(ctx context.Context, r *http.Request, settings domain.Settings) bool {
 	if a.Redis == nil {
 		return false
 	}
@@ -236,10 +245,7 @@ func (a *App) networkLimit(ctx context.Context, r *http.Request) bool {
 	if n == 1 {
 		a.Redis.Expire(ctx, k, time.Minute)
 	}
-	limit := a.Config.NetworkRateLimit
-	if limit <= 0 {
-		limit = 300
-	}
+	limit := settings.NetworkRequestsPerMinute
 	return n <= int64(limit)
 }
 func (a *App) report(w http.ResponseWriter, r *http.Request) {
@@ -269,8 +275,7 @@ func (a *App) report(w http.ResponseWriter, r *http.Request) {
 		write(w, 200, json.RawMessage(cached))
 		return
 	}
-	age := time.Since(time.UnixMilli(b.Timestamp))
-	if b.Stars < 1 || b.Stars > 5 || math.IsNaN(b.Lon) || math.IsNaN(b.Lat) || b.Lon < -180 || b.Lon > 180 || b.Lat < -90 || b.Lat > 90 || b.Accuracy < 0 || b.Accuracy > 100 || age > 30*time.Second || age < -5*time.Second {
+	if b.Stars < 1 || b.Stars > 5 || math.IsNaN(b.Lon) || math.IsNaN(b.Lat) || b.Lon < -180 || b.Lon > 180 || b.Lat < -90 || b.Lat > 90 || math.IsNaN(b.Accuracy) || math.IsInf(b.Accuracy, 0) || b.Accuracy < 0 {
 		fail(w, 400, "choose 1–5 stars and obtain a recent accurate location")
 		return
 	}
@@ -283,20 +288,34 @@ func (a *App) report(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if !a.networkLimit(r.Context(), r) {
-		fail(w, 429, "too many requests; try again shortly")
+	admissionStatus := 0
+	admissionMessage := ""
+	reject := func(status int, message string) error {
+		admissionStatus = status
+		admissionMessage = message
+		return errors.New(message)
+	}
+	res, e := a.Store.ReportWithAdmission(r.Context(), id, key, cell, x, y, b.Stars, func(settings domain.Settings) error {
+		age := time.Since(time.UnixMilli(b.Timestamp))
+		if b.Accuracy > float64(settings.LocationAccuracyMeters) || age > time.Duration(settings.LocationMaxAgeSeconds)*time.Second || age < -5*time.Second {
+			return reject(400, "choose 1–5 stars and obtain a recent accurate location")
+		}
+		if !a.networkLimitWithSettings(r.Context(), r, settings) {
+			return reject(429, "too many requests; try again shortly")
+		}
+		n, err := rateScript.Run(r.Context(), a.Redis, []string{"report-last:" + platform.Hash(id), "report-hour:" + platform.Hash(id), "report-admitted:" + platform.Hash(id) + ":" + platform.Hash(key)}, time.Now().UnixMilli(), key, settings.ReportCooldownSeconds*1000, settings.SessionReportsPerHour).Int()
+		if err != nil {
+			return reject(503, "reporting temporarily unavailable")
+		}
+		if n != 1 {
+			return reject(429, fmt.Sprintf("wait %d seconds between reports; maximum %d per hour", settings.ReportCooldownSeconds, settings.SessionReportsPerHour))
+		}
+		return nil
+	})
+	if admissionStatus != 0 {
+		fail(w, admissionStatus, admissionMessage)
 		return
 	}
-	n, e := rateScript.Run(r.Context(), a.Redis, []string{"report-last:" + platform.Hash(id), "report-hour:" + platform.Hash(id), "report-admitted:" + platform.Hash(id) + ":" + platform.Hash(key)}, time.Now().UnixMilli(), key).Int()
-	if e != nil {
-		fail(w, 503, "reporting temporarily unavailable")
-		return
-	}
-	if n != 1 {
-		fail(w, 429, "wait 30 seconds between reports; maximum 30 per hour")
-		return
-	}
-	res, e := a.Store.Report(r.Context(), id, key, cell, x, y, b.Stars)
 	if e != nil {
 		log.Printf("report write failed: %v", e)
 		fail(w, 503, "report not confirmed; retry with the same request")
@@ -319,6 +338,10 @@ func (a *App) snapshot(w http.ResponseWriter, r *http.Request) {
 	write(w, 200, json.RawMessage(v))
 }
 func (a *App) Start(ctx context.Context) error {
+	if e := a.refreshSettings(ctx); e != nil {
+		return e
+	}
+	go a.monitorSettings(ctx)
 	if e := a.initAuth(ctx); e != nil {
 		return e
 	}
@@ -506,6 +529,12 @@ func (a *App) receive(ctx context.Context) {
 			}
 			switch msg := msg.(type) {
 			case *redis.Message:
+				var event struct {
+					Settings domain.SettingsEnvelope `json:"settings"`
+				}
+				if json.Unmarshal([]byte(msg.Payload), &event) == nil && event.Settings.Revision > 0 {
+					a.applySettings(event.Settings)
+				}
 				a.hub.publish([]byte(msg.Payload))
 			case *redis.Subscription:
 				a.hub.reset() // Reconnect requires a fresh authoritative snapshot.
@@ -553,7 +582,7 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 	if !send("snapshot", snap) {
 		return
 	}
-	t := time.NewTicker(15 * time.Second)
+	t := time.NewTicker(time.Duration(a.currentSettings().Values.SseHeartbeatSeconds) * time.Second)
 	defer t.Stop()
 	for {
 		select {
@@ -562,6 +591,7 @@ func (a *App) events(w http.ResponseWriter, r *http.Request) {
 		case <-sub.closed:
 			return
 		case b := <-sub.ch:
+			t.Reset(time.Duration(a.currentSettings().Values.SseHeartbeatSeconds) * time.Second)
 			if !send("update", json.RawMessage(b)) {
 				return
 			}

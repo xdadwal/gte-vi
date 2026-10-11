@@ -8,7 +8,10 @@ import {
   PlusIcon,
   ArrowLeftIcon,
   XIcon,
+  GearIcon,
 } from "@phosphor-icons/react";
+import { AdminSettings } from "./AdminSettings";
+import { useSettings } from "./settings";
 import { api } from "./api";
 import { randomId } from "./id";
 import { MapView } from "./MapView";
@@ -38,7 +41,7 @@ type Audit = {
   after_state: unknown;
   created_at: string;
 };
-type View = "incidents" | "refuges" | "activity" | "team";
+type View = "incidents" | "refuges" | "activity" | "team" | "settings";
 const emptyRefuge = (): AdminRefuge => ({
   id: randomId(),
   name: "",
@@ -55,12 +58,15 @@ const emptyRefuge = (): AdminRefuge => ({
   publication: "draft",
 });
 export function Admin() {
+  const {
+    settings: { values: config },
+  } = useSettings();
   const [me, setMe] = useState<Identity | null>(null),
     [checking, setChecking] = useState(true),
     [dev, setDev] = useState(false),
     [devToken, setDevToken] = useState(""),
     [view, setView] = useState<View>(
-      ["incidents", "refuges", "activity", "team"].includes(
+      ["incidents", "refuges", "activity", "team", "settings"].includes(
         new URLSearchParams(location.search).get("view") || "",
       )
         ? (new URLSearchParams(location.search).get("view") as View)
@@ -82,6 +88,10 @@ export function Admin() {
   const requestGeneration = useRef(0),
     deepLinkOpened = useRef(false);
   const refresh = useCallback(async () => {
+    if (view === "settings") {
+      setFresh(true);
+      return;
+    }
     const generation = ++requestGeneration.current;
     try {
       const [data, inc] = await Promise.all([
@@ -122,7 +132,7 @@ export function Admin() {
       if (active && !document.hidden) void refresh();
     };
     pull();
-    const t = setInterval(pull, 10000),
+    const t = setInterval(pull, config.adminRefreshSeconds * 1000),
       visibility = () => {
         setFresh(false);
         if (!document.hidden) pull();
@@ -136,7 +146,7 @@ export function Admin() {
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("offline", offline);
     };
-  }, [me, refresh]);
+  }, [me, refresh, config.adminRefreshSeconds]);
   useEffect(() => {
     const guard = (e: BeforeUnloadEvent) => {
       if (dirty) {
@@ -148,7 +158,7 @@ export function Admin() {
     return () => window.removeEventListener("beforeunload", guard);
   }, [dirty]);
   const navigate = (v: View) => {
-    if (dirty && !confirm("Discard unsaved refuge changes?")) return;
+    if (dirty && !confirm("Discard unsaved changes?")) return;
     ++requestGeneration.current;
     setView(v);
     setItems([]);
@@ -232,6 +242,7 @@ export function Admin() {
     refuges: "Refuges",
     activity: "Activity history",
     team: "Team access",
+    settings: "Settings",
   }[view];
   const listIncidents = incidents.filter(
     (i) =>
@@ -260,6 +271,7 @@ export function Admin() {
               ["incidents", "Live incidents", MapTrifoldIcon],
               ["refuges", "Refuges", HouseIcon],
               ["activity", "Activity", ClockCounterClockwiseIcon],
+              ["settings", "Settings", GearIcon],
               ...(me.role === "owner"
                 ? [["team", "Team access", UsersIcon]]
                 : []),
@@ -316,6 +328,13 @@ export function Admin() {
             </p>
           )}
         </div>
+        {view === "settings" && (
+          <AdminSettings
+            owner={me.role === "owner"}
+            csrf={me.csrf}
+            onDirty={setDirty}
+          />
+        )}
         {(view === "incidents" || view === "refuges") && (
           <div className="admin-toolbar">
             <label className="search-label">
@@ -564,6 +583,9 @@ function IncidentEditor({
   onDone: (m: string) => void;
   onError: (m: string) => void;
 }) {
+  const {
+    settings: { values: config },
+  } = useSettings();
   const [action, setAction] = useState<{
       type: "hide" | "remove";
       report?: string;
@@ -577,21 +599,22 @@ function IncidentEditor({
       action.type === "hide"
         ? []
         : i.reports.filter((r) => r.id !== action.report);
-    const latest = rs.slice(0, 50);
+    const latest = rs.slice(0, config.ratingWindow);
     return {
       count: action.type === "hide" ? 0 : i.count - 1,
       status:
         action.type === "hide" || i.count === 1
           ? "removed"
-          : i.count - 1 >= 5
+          : i.count - 1 >= config.activationReports
             ? "active"
             : "pending",
       average:
-        rs.length >= 5
+        i.count - 1 >= config.activationReports &&
+        latest.length >= Math.min(i.count - 1, config.ratingWindow)
           ? latest.reduce((a, r) => a + r.stars, 0) / latest.length
           : 0,
     };
-  }, [i, action]);
+  }, [i, action, config.ratingWindow, config.activationReports]);
   return (
     <section className="admin-detail">
       <p className="eyebrow">SELECTED CELL</p>

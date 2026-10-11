@@ -44,3 +44,20 @@ it.each(["drag outside", "pointer cancel"])(
     expect(submit).not.toHaveBeenCalled();
   },
 );
+it("cancels an in-progress hold when runtime duration changes", () => {
+  vi.useFakeTimers();
+  const submit = vi.fn();
+  const { rerender } = render(
+    <HoldButton disabled={false} duration={3} onComplete={submit} />,
+  );
+  fireEvent.keyDown(screen.getByRole("button"), { key: "Enter" });
+  act(() => vi.advanceTimersByTime(1000));
+  rerender(<HoldButton disabled={false} duration={2} onComplete={submit} />);
+  act(() => vi.advanceTimersByTime(3000));
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Hold 2s to report" }), {
+    key: "Enter",
+  });
+  act(() => vi.advanceTimersByTime(2000));
+  expect(submit).toHaveBeenCalledTimes(1);
+});

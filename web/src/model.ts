@@ -1,4 +1,9 @@
 import type * as GeoJSON from "geojson";
+import {
+  DEFAULT_SETTINGS,
+  type RuntimeSettings,
+  type SettingsEnvelope,
+} from "./settings-values";
 import proj4 from "proj4";
 import { distanceToZone, pointInZone, type Node, type Zone } from "./routing";
 export const UTM = "+proj=utm +zone=43 +datum=WGS84 +units=m +no_defs";
@@ -28,6 +33,7 @@ export type Refuge = {
 };
 export type Overview = { lon: number; lat: number; count: number };
 export type Snapshot = {
+  settings?: SettingsEnvelope;
   overview?: Overview[];
   revisions?: Record<string, number>;
   incidents: Incident[];
@@ -126,18 +132,21 @@ export function alertFor(
   radius: number,
   now: number,
   old?: AlertMemory,
+  config: RuntimeSettings = DEFAULT_SETTINGS,
 ): { notify: boolean; memory: AlertMemory } {
   const memory = { last: 0, severity: 0, inside: false, ...old };
   const near = i.status === "active" && distanceToZone(p, zone(i)) <= radius;
   if (!near) {
     memory.outsideSince ??= now;
-    if (now - memory.outsideSince >= 60000) memory.inside = false;
+    if (now - memory.outsideSince >= config.alertReentrySeconds * 1000)
+      memory.inside = false;
     return { notify: false, memory };
   }
   delete memory.outsideSince;
   const notify =
-    (!memory.last || now - memory.last >= 300000) &&
-    (!memory.inside || i.average - memory.severity >= 1 - 1e-9);
+    (!memory.last || now - memory.last >= config.alertCooldownSeconds * 1000) &&
+    (!memory.inside ||
+      i.average - memory.severity >= config.alertEscalationStars - 1e-9);
   if (notify || memory.inside) memory.inside = true;
   if (notify) {
     memory.last = now;

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -51,11 +50,9 @@ func main() {
 	if c.Role != "all" && c.Role != "api" && c.Role != "gateway" && c.Role != "worker" {
 		log.Fatal("APP_ROLE must be all, api, gateway or worker")
 	}
-	limit, err := strconv.Atoi(env("NETWORK_RATE_PER_MINUTE", "300"))
-	if err != nil || limit < 1 {
-		log.Fatal("NETWORK_RATE_PER_MINUTE must be a positive integer")
+	if os.Getenv("NETWORK_RATE_PER_MINUTE") != "" {
+		log.Print("NETWORK_RATE_PER_MINUTE is deprecated; use owner runtime settings")
 	}
-	c.NetworkRateLimit = limit
 	for _, cidr := range c.TrustedProxyCIDRs {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			log.Fatal("invalid TRUSTED_PROXY_CIDRS")

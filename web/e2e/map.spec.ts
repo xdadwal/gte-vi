@@ -140,25 +140,41 @@ test("real worker previews a walking route and marks it affected on host closure
     headers: { "X-CSRF-Token": me.csrf },
   });
   expect(saved.ok()).toBeTruthy();
-  await page.reload();
-  await page.getByRole("button", { name: "Find refuge", exact: true }).click();
-  await page.waitForTimeout(600);
-  await page
-    .getByRole("button", { name: "Find nearest eligible refuge" })
-    .click();
-  await expect(page.locator(".route-summary h2")).toHaveText(refuge.name);
-  const all = await (await page.request.get("/api/v1/admin/refuges")).json(),
-    current = all.items.find((r: { id: string }) => r.id === refuge.id);
-  const closed = await page.request.put("/api/v1/admin/refuges", {
-    data: { ...current, closed: true },
-    headers: { "X-CSRF-Token": me.csrf },
-  });
-  expect(closed.ok()).toBeTruthy();
-  await expect(
-    page
-      .locator(".route-summary .warning")
-      .filter({ hasText: "affect this route" }),
-  ).toContainText("affect this route");
-  await expect(page.locator(".refuge-list button")).toHaveCount(0);
-  await context.close();
+  try {
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Find refuge", exact: true })
+      .click();
+    await page.waitForTimeout(600);
+    await page
+      .getByRole("button", { name: "Find nearest eligible refuge" })
+      .click();
+    await expect(page.locator(".route-summary h2")).toHaveText(refuge.name);
+    const all = await (await page.request.get("/api/v1/admin/refuges")).json(),
+      current = all.items.find((r: { id: string }) => r.id === refuge.id);
+    const closed = await page.request.put("/api/v1/admin/refuges", {
+      data: { ...current, closed: true },
+      headers: { "X-CSRF-Token": me.csrf },
+    });
+    expect(closed.ok()).toBeTruthy();
+    await expect(
+      page
+        .locator(".route-summary .warning")
+        .filter({ hasText: "affect this route" }),
+    ).toContainText("affect this route");
+    await expect(page.locator(".refuge-list button")).toHaveCount(0);
+  } finally {
+    const data = await (await page.request.get("/api/v1/admin/refuges")).json();
+    const fixture = data.items.find((r: { id: string }) => r.id === refuge.id);
+    if (fixture && !fixture.closed) {
+      const cleanup = await page.request.put("/api/v1/admin/refuges", {
+        data: { ...fixture, closed: true },
+        headers: { "X-CSRF-Token": me.csrf },
+      });
+      expect(cleanup.ok(), "Synthetic route refuge closed after test").toBe(
+        true,
+      );
+    }
+    await context.close();
+  }
 });

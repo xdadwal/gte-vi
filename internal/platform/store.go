@@ -61,6 +61,10 @@ func (s *Store) Migrate(ctx context.Context, owner string) error {
 	if e != nil {
 		return e
 	}
+	defaults, _ := json.Marshal(domain.DefaultSettings())
+	if _, e = tx.Exec(ctx, `INSERT INTO runtime_settings(id,revision,values) VALUES(1,1,$1) ON CONFLICT DO NOTHING`, defaults); e != nil {
+		return e
+	}
 	if owner != "" {
 		_, e = tx.Exec(ctx, `INSERT INTO admins(email,role) VALUES($1,'owner') ON CONFLICT DO NOTHING`, owner)
 	}
@@ -91,14 +95,18 @@ func (s *Store) SessionValid(ctx context.Context, id, csrf string) bool {
 	return e == nil && ok
 }
 func recompute(ctx context.Context, tx pgx.Tx, episode string, now time.Time) error {
-	rows, e := tx.Query(ctx, `SELECT session_id,stars,updated_at FROM reports WHERE episode=$1 AND NOT suppressed AND expires_at>$2 ORDER BY updated_at DESC,session_id DESC LIMIT 50`, episode, now)
+	settings, e := settingsTx(ctx, tx, "")
+	if e != nil {
+		return e
+	}
+	rows, e := tx.Query(ctx, `SELECT session_id,stars,updated_at,expires_at FROM reports WHERE episode=$1 AND NOT suppressed AND expires_at>$2 ORDER BY updated_at DESC,session_id DESC LIMIT $3`, episode, now, settings.Values.RatingWindow)
 	if e != nil {
 		return e
 	}
 	rs := []domain.Rating{}
 	for rows.Next() {
 		var r domain.Rating
-		if e = rows.Scan(&r.Session, &r.Stars, &r.Updated); e != nil {
+		if e = rows.Scan(&r.Session, &r.Stars, &r.Updated, &r.Expires); e != nil {
 			rows.Close()
 			return e
 		}
@@ -109,7 +117,7 @@ func recompute(ctx context.Context, tx pgx.Tx, episode string, now time.Time) er
 	if e != nil {
 		return e
 	}
-	a := domain.Aggregate(rs, now)
+	a := domain.AggregateWithSettings(rs, now, settings.Values)
 	if e = tx.QueryRow(ctx, `SELECT count(*) FROM reports WHERE episode=$1 AND NOT suppressed AND expires_at>$2`, episode, now).Scan(&a.Count); e != nil {
 		return e
 	}
@@ -121,11 +129,21 @@ func recompute(ctx context.Context, tx pgx.Tx, episode string, now time.Time) er
 	return e
 }
 func (s *Store) Report(ctx context.Context, session, key, cell string, x, y, stars int) (json.RawMessage, error) {
+	return s.ReportWithAdmission(ctx, session, key, cell, x, y, stars, nil)
+}
+
+// ReportWithAdmission holds the settings row lock through admission and persistence.
+// Confirmed idempotent retries return before invoking admission.
+func (s *Store) ReportWithAdmission(ctx context.Context, session, key, cell string, x, y, stars int, admission func(domain.Settings) error) (json.RawMessage, error) {
 	tx, e := s.DB.Begin(ctx)
 	if e != nil {
 		return nil, e
 	}
 	defer tx.Rollback(ctx)
+	settings, e := settingsTx(ctx, tx, "FOR SHARE")
+	if e != nil {
+		return nil, e
+	}
 	// Session lock protects idempotency across concurrent retries in different cells.
 	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, session); e != nil {
 		return nil, e
@@ -137,6 +155,11 @@ func (s *Store) Report(ctx context.Context, session, key, cell string, x, y, sta
 	}
 	if !errors.Is(e, pgx.ErrNoRows) {
 		return nil, e
+	}
+	if admission != nil {
+		if e = admission(settings.Values); e != nil {
+			return nil, e
+		}
 	}
 	if _, e = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,1))`, cell); e != nil {
 		return nil, e
@@ -157,7 +180,7 @@ func (s *Store) Report(ctx context.Context, session, key, cell string, x, y, sta
 		return nil, e
 	}
 	now := time.Now().UTC()
-	_, e = tx.Exec(ctx, `INSERT INTO reports(id,episode,session_id,stars,updated_at,expires_at)VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(episode,session_id) DO UPDATE SET stars=excluded.stars,updated_at=excluded.updated_at,expires_at=excluded.expires_at,suppressed=false`, ID(), episode, Hash(session), stars, now, now.Add(30*time.Minute))
+	_, e = tx.Exec(ctx, `INSERT INTO reports(id,episode,session_id,stars,updated_at,expires_at)VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(episode,session_id) DO UPDATE SET stars=excluded.stars,updated_at=excluded.updated_at,expires_at=excluded.expires_at,suppressed=false`, ID(), episode, Hash(session), stars, now, now.Add(time.Duration(settings.Values.ReportExpiryMinutes)*time.Minute))
 	if e != nil {
 		return nil, e
 	}
@@ -180,6 +203,10 @@ func (s *Store) Snapshot(ctx context.Context, cells []string, overview bool) (ma
 		return nil, e
 	}
 	defer tx.Rollback(ctx)
+	settings, e := settingsTx(ctx, tx, "")
+	if e != nil {
+		return nil, e
+	}
 	var current bool
 	if e = tx.QueryRow(ctx, `SELECT COALESCE((SELECT checked_at>now()-interval '3 seconds' FROM runtime_state WHERE name='expiry'),false)`).Scan(&current); e != nil {
 		return nil, e
@@ -248,7 +275,7 @@ func (s *Store) Snapshot(ctx context.Context, cells []string, overview bool) (ma
 			return nil, e
 		}
 	}
-	return map[string]any{"incidents": inc, "refuges": refuges, "overview": overviewItems, "revisions": revisions, "serverTime": time.Now().UTC()}, tx.Commit(ctx)
+	return map[string]any{"incidents": inc, "refuges": refuges, "overview": overviewItems, "revisions": revisions, "serverTime": time.Now().UTC(), "settings": settings}, tx.Commit(ctx)
 }
 func (s *Store) Expire(ctx context.Context) error {
 	tx, e := s.DB.Begin(ctx)
@@ -256,6 +283,9 @@ func (s *Store) Expire(ctx context.Context) error {
 		return e
 	}
 	defer tx.Rollback(ctx)
+	if _, e = settingsTx(ctx, tx, "FOR SHARE"); e != nil {
+		return e
+	}
 	rows, e := tx.Query(ctx, `SELECT DISTINCT i.cell FROM incidents i JOIN reports r ON r.episode=i.id WHERE i.status<>'empty' AND NOT r.suppressed AND r.expires_at<=now() AND r.expires_at>i.updated_at ORDER BY i.cell`)
 	if e != nil {
 		return e

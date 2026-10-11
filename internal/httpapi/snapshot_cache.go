@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +19,12 @@ type cachedSnapshot struct {
 func (a *App) pollSnapshot(ctx context.Context, cells []string, overview bool) ([]byte, error) {
 	sort.Strings(cells)
 	key := strings.Join(cells, ",")
+	a.settingsMu.RLock()
+	revision := a.settings.Revision
+	a.settingsMu.RUnlock()
+	if revision > 0 {
+		key = fmt.Sprintf("%d|", revision) + key
+	}
 	if overview {
 		key += "|overview"
 	}
@@ -46,7 +53,7 @@ func (a *App) pollSnapshot(ctx context.Context, cells []string, overview bool) (
 					break
 				}
 			}
-			a.snapCache[key] = cachedSnapshot{body: body, until: time.Now().Add(500 * time.Millisecond)}
+			a.snapCache[key] = cachedSnapshot{body: body, until: time.Now().Add(time.Duration(a.currentSettings().Values.SnapshotCacheMillis) * time.Millisecond)}
 			a.snapMu.Unlock()
 		}
 		return body, nil

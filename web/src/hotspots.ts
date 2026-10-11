@@ -11,19 +11,19 @@ export const STAR_COLORS = [
   "#d74435",
   "#a92d4c",
 ];
-const activeColor: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["get", "average"],
-  ...STAR_COLORS.flatMap((color, index) => [index + 1, color]),
-];
+export function severityExpression(
+  colors: string[] = STAR_COLORS,
+): ExpressionSpecification {
+  const activeColor: ExpressionSpecification = [
+    "interpolate",
+    ["linear"],
+    ["get", "average"],
+    ...colors.flatMap((color, index) => [index + 1, color]),
+  ];
 
-export const severityColor: ExpressionSpecification = [
-  "case",
-  ["==", ["get", "status"], "pending"],
-  "#8b8170",
-  activeColor,
-];
+  return ["case", ["==", ["get", "status"], "pending"], "#8b8170", activeColor];
+}
+export const severityColor = severityExpression();
 
 export function hotspotFeatures(
   incidents: Incident[],

@@ -23,7 +23,9 @@ go run ./cmd/gte
 npm run dev --prefix web
 ```
 
-Open <http://127.0.0.1:5173> or <http://127.0.0.1:5173/admin>. The console exposes local-token sign-in only in development. The default database contains **no refuges**. Browser geolocation requires localhost or HTTPS; reporting requires a fix within 30 seconds and 100 m accuracy.
+Open <http://127.0.0.1:5173> or <http://127.0.0.1:5173/admin>. The console exposes local-token sign-in only in development. The default database contains **no refuges**. Browser geolocation requires localhost or HTTPS; reporting defaults to a fix within 30 seconds and 100 m accuracy.
+
+Owners can adjust report, alert, walking, location, map and update settings through **Settings** in `/admin`; other operators can view them. Changes are validated, revisioned and audited with a reason, and reach open clients through SSE or polling without a deployment. Restore defaults fills a draft for review before saving. Shorter expiry caps live reports; longer expiry applies to future submissions and never revives expired reports. See [runtime settings](docs/operations/runtime-settings.md) for details.
 
 Development also accepts `http://localhost:5173` and the built app at `http://127.0.0.1:8080` or `http://localhost:8080`. If you change preview ports, set `PUBLIC_ORIGIN` to the browser's exact origin or configure the comma-separated `DEV_ALLOWED_ORIGINS`. Production accepts only `PUBLIC_ORIGIN` and ignores development origins.
 

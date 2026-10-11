@@ -7,7 +7,8 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 maplibregl.setWorkerUrl(workerUrl);
 import type { Incident, Refuge, Fix, Overview } from "./model";
 import { ll } from "./model";
-import { hotspotFeatures, severityColor, STAR_COLORS } from "./hotspots";
+import { useSettings } from "./settings";
+import { hotspotFeatures, severityColor, severityExpression } from "./hotspots";
 type Props = {
   incidents: Incident[];
   overview?: Overview[];
@@ -25,17 +26,36 @@ type Props = {
   onEntrance?: (p: [number, number]) => void;
 };
 export function MapView(props: Props) {
+  const {
+    settings: { values: config, revision },
+  } = useSettings();
+  const settingsRef = useRef(config);
+  settingsRef.current = config;
   const root = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null),
     ready = useRef(false),
     latest = useRef(props),
     following = useRef(false),
+    interacted = useRef(false),
+    initialViewApplied = useRef(revision > 0),
     markers = useRef<maplibregl.Marker[]>([]);
   latest.current = props;
   function update() {
     const m = map.current;
     if (!m || !ready.current) return;
     const p = latest.current;
+    const config = settingsRef.current;
+    const color = severityExpression(config.starColors);
+    for (const layer of ["incident-hotspots", "incident-fill"])
+      m.setPaintProperty(layer, "fill-color", color);
+    for (const layer of ["active-outline", "pending-outline"])
+      m.setPaintProperty(layer, "line-color", color);
+    m.setPaintProperty("incident-hotspots", "fill-opacity", [
+      "case",
+      ["==", ["get", "status"], "pending"],
+      config.hotspotPendingOpacity,
+      config.hotspotActiveOpacity,
+    ]);
     const collection = {
       type: "FeatureCollection",
       features: p.incidents.map((i) => ({
@@ -118,7 +138,9 @@ export function MapView(props: Props) {
         "--severity-color",
         i.status === "pending"
           ? "#8b8170"
-          : STAR_COLORS[Math.max(0, Math.min(4, Math.round(i.average) - 1))],
+          : config.starColors[
+              Math.max(0, Math.min(4, Math.round(i.average) - 1))
+            ],
       );
       button.textContent =
         i.status === "active" ? `${i.average.toFixed(1)} ★` : "Pending";
@@ -165,8 +187,8 @@ export function MapView(props: Props) {
       style:
         import.meta.env.VITE_MAP_STYLE ||
         "https://tiles.openfreemap.org/styles/positron",
-      center: [77.209, 28.6139],
-      zoom: 11.5,
+      center: [config.mapLon, config.mapLat],
+      zoom: config.mapZoom,
       attributionControl: false,
     });
     map.current = m;
@@ -278,6 +300,9 @@ export function MapView(props: Props) {
       ]);
     };
     m.on("moveend", bounds);
+    m.on("movestart", (event) => {
+      if (event.originalEvent) interacted.current = true;
+    });
     m.on("dragstart", () => {
       following.current = false;
     });
@@ -299,6 +324,7 @@ export function MapView(props: Props) {
     };
   }, []);
   useEffect(update, [
+    config,
     props.incidents,
     props.overview,
     props.exitCoordinates,
@@ -309,7 +335,18 @@ export function MapView(props: Props) {
     props.entrance,
   ]);
   useEffect(() => {
+    if (revision && !initialViewApplied.current) {
+      initialViewApplied.current = true;
+      if (!interacted.current && !following.current)
+        map.current?.jumpTo({
+          center: [config.mapLon, config.mapLat],
+          zoom: config.mapZoom,
+        });
+    }
+  }, [revision, config.mapLon, config.mapLat, config.mapZoom]);
+  useEffect(() => {
     if (props.locate) {
+      interacted.current = true;
       following.current = true;
       if (props.fix)
         map.current?.easeTo({

@@ -20,6 +20,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 test("failed fallback remains stale until a successful snapshot", async () => {
   const { result } = renderHook(() => useLive(["1431:6334"]));
@@ -122,4 +123,182 @@ test("secure location requests distinguish permission denial from HTTP blocking"
   act(() => watchPosition.mock.calls[0][1]({ code: 1 }));
   expect(result.current.error).toContain("Location access is blocked");
   expect(result.current.error).not.toContain("requires HTTPS");
+});
+test("settings events update behavior without reconnecting the live stream", async () => {
+  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } =
+    await import("./settings");
+  const { result } = renderHook(
+    () => ({ live: useLive(["1431:6334"]), settings: useSettings().settings }),
+    { wrapper: SettingsProvider },
+  );
+  const connection = Events.current;
+  act(() => {
+    connection.send("snapshot", {
+      incidents: [],
+      refuges: [],
+      serverTime: "",
+      settings: { revision: 1, values: DEFAULT_SETTINGS },
+    });
+    connection.send("update", {
+      type: "settings",
+      settings: {
+        revision: 2,
+        values: {
+          ...DEFAULT_SETTINGS,
+          reportHoldSeconds: 2,
+          pollingSeconds: 12,
+        },
+      },
+    });
+  });
+  expect(result.current.settings.values.reportHoldSeconds).toBe(2);
+  expect(result.current.settings.values.pollingSeconds).toBe(12);
+  expect(result.current.live.fresh).toBe(true);
+  expect(Events.current).toBe(connection);
+  act(() =>
+    connection.send("update", {
+      type: "settings",
+      settings: { revision: 1, values: DEFAULT_SETTINGS },
+    }),
+  );
+  expect(result.current.settings.revision).toBe(2);
+});
+test("fallback polling rebases a long interval after settings shorten it", async () => {
+  vi.useFakeTimers();
+  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } =
+    await import("./settings");
+  vi.mocked(fetch).mockImplementation(async (url) => {
+    if (String(url).includes("/snapshot?"))
+      return {
+        ok: true,
+        json: async () => ({ incidents: [], refuges: [], serverTime: "" }),
+      } as Response;
+    throw new Error("offline");
+  });
+  const { result } = renderHook(
+    () => ({ live: useLive([]), apply: useSettings().applySettings }),
+    { wrapper: SettingsProvider },
+  );
+  act(() =>
+    result.current.apply({
+      revision: 1,
+      values: { ...DEFAULT_SETTINGS, pollingSeconds: 120, staleSeconds: 121 },
+    }),
+  );
+  await act(async () => {});
+  const snapshotCalls = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).includes("/snapshot?")).length;
+  const before = snapshotCalls();
+  await act(async () => {
+    vi.advanceTimersByTime(2000);
+  });
+  expect(snapshotCalls()).toBe(before);
+  act(() =>
+    result.current.apply({
+      revision: 2,
+      values: { ...DEFAULT_SETTINGS, pollingSeconds: 1 },
+    }),
+  );
+  await act(async () => {
+    vi.advanceTimersByTime(1250);
+  });
+  expect(snapshotCalls()).toBeGreaterThan(before);
+  expect(result.current.live.fresh).toBe(true);
+});
+test("pending reconnect respects newly lowered and raised reconnect bounds", async () => {
+  vi.useFakeTimers();
+  const { SettingsProvider, useSettings, DEFAULT_SETTINGS } =
+    await import("./settings");
+  const { result } = renderHook(
+    () => ({
+      live: useLive(["1431:6334"]),
+      apply: useSettings().applySettings,
+    }),
+    { wrapper: SettingsProvider },
+  );
+  act(() =>
+    result.current.apply({
+      revision: 1,
+      values: {
+        ...DEFAULT_SETTINGS,
+        reconnectMinSeconds: 30,
+        reconnectMaxSeconds: 60,
+      },
+    }),
+  );
+  const first = Events.current;
+  act(() => first.onerror?.());
+  act(() =>
+    result.current.apply({
+      revision: 2,
+      values: {
+        ...DEFAULT_SETTINGS,
+        reconnectMinSeconds: 1,
+        reconnectMaxSeconds: 2,
+      },
+    }),
+  );
+  await act(async () => {
+    vi.advanceTimersByTime(2000);
+  });
+  expect(Events.current).not.toBe(first);
+  const second = Events.current;
+  act(() => second.onerror?.());
+  act(() =>
+    result.current.apply({
+      revision: 3,
+      values: {
+        ...DEFAULT_SETTINGS,
+        reconnectMinSeconds: 5,
+        reconnectMaxSeconds: 10,
+      },
+    }),
+  );
+  await act(async () => {
+    vi.advanceTimersByTime(4000);
+  });
+  expect(Events.current).toBe(second);
+  await act(async () => {
+    vi.advanceTimersByTime(1000);
+  });
+  expect(Events.current).not.toBe(second);
+});
+test("a slow polling snapshot can recover after stale stream silence", async () => {
+  vi.useFakeTimers();
+  vi.mocked(fetch).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        setTimeout(
+          () =>
+            resolve({
+              ok: true,
+              json: async () => ({
+                incidents: [],
+                refuges: [],
+                serverTime: "recovered",
+              }),
+            } as Response),
+          1500,
+        );
+      }),
+  );
+  const { result } = renderHook(() => useLive(["1431:6334"]));
+  act(() =>
+    Events.current.send("snapshot", {
+      incidents: [],
+      refuges: [],
+      serverTime: "initial",
+    }),
+  );
+  await act(async () => {
+    vi.advanceTimersByTime(46000);
+  });
+  expect(result.current.fresh).toBe(false);
+  await act(async () => {
+    vi.advanceTimersByTime(1500);
+  });
+  expect(result.current.snapshot.serverTime).toBe("recovered");
+  expect(result.current.fresh).toBe(true);
 });

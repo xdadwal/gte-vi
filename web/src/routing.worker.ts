@@ -13,10 +13,13 @@ type Request = {
   refuges: Refuge[];
   zones: Zone[];
   now: number;
+  settings?: { walkingMaxMeters: number; walkingSpeedKmh: number };
 };
 const cache = new Map<string, Graph>();
 self.onmessage = async (e: MessageEvent<Request>) => {
   const request = e.data;
+  const max = request.settings?.walkingMaxMeters ?? 3000,
+    speed = (request.settings?.walkingSpeedKmh ?? 4) * 1000;
   try {
     const response = await fetch("/api/v1/routing/manifest.json");
     if (!response.ok) throw new Error("Walking-network data is not available.");
@@ -25,7 +28,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
       tiles: Record<string, string>;
     };
     const origin = xy(request.origin.lon, request.origin.lat),
-      cells = cellsAround(origin, 3100),
+      cells = cellsAround(origin, max + 100),
       nodes = new Map<string, Node>(),
       edges = new Map<string, Graph["edges"][number]>();
     let index = 0;
@@ -56,12 +59,12 @@ self.onmessage = async (e: MessageEvent<Request>) => {
         Math.hypot(
           xy(r.lon, r.lat).x - origin.x,
           xy(r.lon, r.lat).y - origin.y,
-        ) <= 3000 && isOpen(r, request.now),
+        ) <= max && isOpen(r, request.now),
     );
     if (!candidates.length) {
       self.postMessage({
         id: request.id,
-        error: "No eligible walking route found within 3 km.",
+        error: `No eligible walking route found within ${max / 1000} km.`,
       });
       return;
     }
@@ -91,7 +94,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
         "origin",
         remaining.map((r) => "refuge:" + r.id),
         request.zones,
-        3000,
+        max,
       );
       if (!route) break;
       const refuge = remaining.find(
@@ -101,7 +104,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
         !openThrough(
           refuge,
           request.now,
-          request.now + (route.distance / 4000) * 3600000,
+          request.now + (route.distance / speed) * 3600000,
         )
       ) {
         remaining = remaining.filter((r) => r.id !== refuge.id);
@@ -124,7 +127,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     }
     self.postMessage({
       id: request.id,
-      error: "No eligible walking route found within 3 km.",
+      error: `No eligible walking route found within ${max / 1000} km.`,
     });
   } catch (error) {
     self.postMessage({

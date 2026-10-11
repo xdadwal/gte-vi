@@ -1,7 +1,14 @@
 import { useEffect, useState, useRef } from "react";
+import { useSettings, pollingDelay } from "./settings";
 import { api } from "./api";
 import type { Incident, Snapshot } from "./model";
 export function useLive(cells: string[], overview = false) {
+  const {
+    settings: { values: config },
+    applySettings,
+  } = useSettings();
+  const configRef = useRef(config);
+  configRef.current = config;
   const [snapshot, setSnapshot] = useState<Snapshot>({
       incidents: [],
       refuges: [],
@@ -13,6 +20,15 @@ export function useLive(cells: string[], overview = false) {
   const generation = useRef(0),
     loadedKey = useRef("");
   const key = cells.join(",");
+  const rebaseTimers = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    rebaseTimers.current?.();
+  }, [
+    config.pollingSeconds,
+    config.staleSeconds,
+    config.reconnectMinSeconds,
+    config.reconnectMaxSeconds,
+  ]);
   useEffect(() => {
     const gen = ++generation.current;
     setState(document.hidden ? "paused" : "connecting");
@@ -21,13 +37,17 @@ export function useLive(cells: string[], overview = false) {
       poll: ReturnType<typeof setInterval> | undefined,
       retry: ReturnType<typeof setTimeout> | undefined,
       last = 0,
-      delay = 1000,
+      delay = configRef.current.reconnectMinSeconds * 1000,
       streamEpoch = 0,
-      refugePull = 0;
+      refugePull = 0,
+      nextPull = 0,
+      retryStarted = 0,
+      retryDelay = 0;
     const revisions = new Map<string, number>();
     const valid = () => active && gen === generation.current;
     const apply = (s: Snapshot) => {
       if (!valid()) return;
+      applySettings(s.settings);
       last = Date.now();
       loadedKey.current = key;
       revisions.clear();
@@ -52,19 +72,31 @@ export function useLive(cells: string[], overview = false) {
     };
     const fallback = () => {
       if (!valid()) return;
-      ++streamEpoch;
       setState("stale");
       if (!poll) {
+        ++streamEpoch;
         void pull();
-        poll = setInterval(pull, 9500 + Math.random() * 1000);
+        nextPull = Date.now() + pollingDelay(configRef.current);
+        poll = setInterval(() => {
+          if (Date.now() >= nextPull) {
+            void pull();
+            nextPull = Date.now() + pollingDelay(configRef.current);
+          }
+        }, 250);
       }
       if (!cells.length) return;
-      if (!retry)
+      if (!retry) {
+        retryStarted = Date.now();
+        retryDelay = Math.max(
+          configRef.current.reconnectMinSeconds * 1000,
+          Math.min(delay, configRef.current.reconnectMaxSeconds * 1000),
+        );
         retry = setTimeout(() => {
           retry = undefined;
           connect();
-        }, delay);
-      delay = Math.min(delay * 2, 30000);
+        }, retryDelay);
+      }
+      delay = Math.min(delay * 2, configRef.current.reconnectMaxSeconds * 1000);
     };
     const connect = () => {
       if (!valid() || document.hidden) return;
@@ -82,7 +114,7 @@ export function useLive(cells: string[], overview = false) {
         apply(JSON.parse((event as MessageEvent).data));
         if (valid()) {
           setState("live");
-          delay = 1000;
+          delay = configRef.current.reconnectMinSeconds * 1000;
           if (poll) {
             clearInterval(poll);
             poll = undefined;
@@ -97,6 +129,10 @@ export function useLive(cells: string[], overview = false) {
         if (!valid() || source !== currentSource) return;
         last = Date.now();
         const msg = JSON.parse((event as MessageEvent).data);
+        if (msg.type === "settings") {
+          applySettings(msg.settings);
+          return;
+        }
         if (msg.type === "refuges") {
           setState("stale");
           const fetchID = ++refugePull,
@@ -138,6 +174,24 @@ export function useLive(cells: string[], overview = false) {
         fallback();
       };
     };
+    const rebase = () => {
+      if (poll) nextPull = Date.now() + pollingDelay(configRef.current);
+      const minimum = configRef.current.reconnectMinSeconds * 1000,
+        maximum = configRef.current.reconnectMaxSeconds * 1000;
+      delay = Math.max(minimum, Math.min(delay, maximum));
+      if (retry) {
+        clearTimeout(retry);
+        retryDelay = Math.max(minimum, Math.min(retryDelay, maximum));
+        retry = setTimeout(
+          () => {
+            retry = undefined;
+            connect();
+          },
+          Math.max(0, retryStarted + retryDelay - Date.now()),
+        );
+      }
+    };
+    rebaseTimers.current = rebase;
     const stop = () => {
       source?.close();
       source = undefined;
@@ -160,15 +214,32 @@ export function useLive(cells: string[], overview = false) {
       if (!overview || !valid() || document.hidden) return;
       try {
         const s = await api<Snapshot>("snapshot?overview=true");
-        if (valid()) setSnapshot((old) => ({ ...old, overview: s.overview }));
+        if (valid()) {
+          applySettings(s.settings);
+          setSnapshot((old) => ({ ...old, overview: s.overview }));
+        }
       } catch {
         /* Detailed local data still has its own freshness gate. */
       }
     };
     if (overview) void refreshOverview();
-    const overviewTimer = setInterval(refreshOverview, 30000);
+    let lastOverview = Date.now();
+    const overviewTimer = setInterval(() => {
+      if (
+        Date.now() - lastOverview >=
+        configRef.current.overviewRefreshSeconds * 1000
+      ) {
+        lastOverview = Date.now();
+        void refreshOverview();
+      }
+    }, 1000);
     const monitor = setInterval(() => {
-      if (valid() && !document.hidden && last && Date.now() - last > 45000) {
+      if (
+        valid() &&
+        !document.hidden &&
+        last &&
+        Date.now() - last > configRef.current.staleSeconds * 1000
+      ) {
         setState("stale");
         source?.close();
         source = undefined;
@@ -179,12 +250,13 @@ export function useLive(cells: string[], overview = false) {
     connect();
     return () => {
       active = false;
+      if (rebaseTimers.current === rebase) rebaseTimers.current = null;
       stop();
       clearInterval(monitor);
       clearInterval(overviewTimer);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [key, overview]);
+  }, [key, overview, applySettings]);
   return {
     snapshot,
     state,
@@ -193,6 +265,11 @@ export function useLive(cells: string[], overview = false) {
   };
 }
 export function useLocation() {
+  const {
+    settings: { values: config },
+  } = useSettings();
+  const locationConfig = useRef(config);
+  locationConfig.current = config;
   const [fix, setFix] = useState<import("./model").Fix | null>(null),
     [error, setError] = useState("");
   const watch = useRef<number | null>(null);
@@ -233,7 +310,14 @@ export function useLocation() {
             : "Could not obtain your location. Try again.",
         );
       },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+      {
+        enableHighAccuracy: true,
+        maximumAge: Math.min(
+          5000,
+          locationConfig.current.locationMaxAgeSeconds * 1000,
+        ),
+        timeout: 15000,
+      },
     );
   };
   useEffect(() => {

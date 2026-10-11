@@ -9,6 +9,7 @@ type Rating struct {
 	Session string
 	Stars   int
 	Updated time.Time
+	Expires time.Time
 }
 type Aggregation struct {
 	Status  string
@@ -18,9 +19,16 @@ type Aggregation struct {
 }
 
 func Aggregate(rs []Rating, now time.Time) Aggregation {
+	return AggregateWithSettings(rs, now, DefaultSettings())
+}
+func AggregateWithSettings(rs []Rating, now time.Time, settings Settings) Aggregation {
 	bySession := map[string]Rating{}
 	for _, r := range rs {
-		if !r.Updated.Add(30 * time.Minute).After(now) {
+		expiry := r.Expires
+		if expiry.IsZero() {
+			expiry = r.Updated.Add(time.Duration(settings.ReportExpiryMinutes) * time.Minute)
+		}
+		if !expiry.After(now) {
 			continue
 		}
 		old, ok := bySession[r.Session]
@@ -37,8 +45,8 @@ func Aggregate(rs []Rating, now time.Time) Aggregation {
 		return a
 	}
 	a.Status = "pending"
-	a.Buffer = 100
-	if a.Count < 5 {
+	a.Buffer = float64(settings.PendingBufferMeters)
+	if a.Count < settings.ActivationReports {
 		return a
 	}
 	sort.Slice(fresh, func(i, j int) bool {
@@ -48,14 +56,14 @@ func Aggregate(rs []Rating, now time.Time) Aggregation {
 		return fresh[i].Updated.After(fresh[j].Updated)
 	})
 	n := len(fresh)
-	if n > 50 {
-		n = 50
+	if n > settings.RatingWindow {
+		n = settings.RatingWindow
 	}
 	for _, r := range fresh[:n] {
 		a.Average += float64(r.Stars)
 	}
 	a.Average /= float64(n)
 	a.Status = "active"
-	a.Buffer = 100 * a.Average
+	a.Buffer = float64(settings.BufferPerStarMeters) * a.Average
 	return a
 }

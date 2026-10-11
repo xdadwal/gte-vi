@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/xdadwal/gte-vi/internal/domain"
 	"net/url"
 	"os"
 	"strings"
@@ -31,6 +32,10 @@ func testStore(t *testing.T) *Store {
 	}
 	_, e = s.DB.Exec(context.Background(), `TRUNCATE receipts,reports,incidents,sessions,outbox,refuges,audit,admin_sessions RESTART IDENTITY CASCADE`)
 	if e != nil {
+		t.Fatal(e)
+	}
+	defaults, _ := json.Marshal(domain.DefaultSettings())
+	if _, e = s.DB.Exec(context.Background(), `UPDATE runtime_settings SET revision=1,values=$1 WHERE id=1`, defaults); e != nil {
 		t.Fatal(e)
 	}
 	if e := s.Expire(context.Background()); e != nil {

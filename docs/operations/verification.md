@@ -10,6 +10,10 @@ These are local engineering measurements, not a production-capacity promise. Hos
 - The production frontend was exercised against both the Go static-file server and the built, unprivileged Docker image. All four browser journeys passed, including real-graph routing and live host closure marking the route affected. Docker image build and health checks passed.
 - Independent code review identified five reporting/routing/reconnect issues and two recovery issues introduced by caching. All were fixed and reviewed again; no important recovery blockers remained.
 
+## Runtime settings
+
+Runtime settings verification: Go race tests and vet passed with dedicated PostGIS/Redis test services. New coverage includes bounded settings validation, owner/read-only authorization, CSRF, revocation, optimistic conflicts, audit records, expiry caps without resurrection, concurrent report admission/save coordination and changed Redis cooldowns. All 30 frontend tests passed. Six browser journeys passed locally, including the real walking graph and owner settings propagation to open SSE/polling maps, preserved personal radius, new visitor defaults and stale-save rejection. The mobile settings overflow regression passed separately after the navigation fix. Desktop and mobile HTTPS settings views were checked for overflow and serious/critical axe violations. Settings defaults were compared across Go and TypeScript. This does not extend the capacity measurements below; no new load benchmark was run.
+
 ## Local load measurements
 
 | Workload | Measured scope | Result |
